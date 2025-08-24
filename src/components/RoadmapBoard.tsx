@@ -95,6 +95,7 @@ export function RoadmapBoard({
   const [editingRoadmapTitle, setEditingRoadmapTitle] = useState(false)
   const [roadmapTitle, setRoadmapTitle] = useState(roadmap.title)
   const [editingModule, setEditingModule] = useState<Module | null>(null)
+  const [editingObjective, setEditingObjective] = useState<Objective | null>(null)
   
   const canEdit = true // Always in edit mode now
 
@@ -303,12 +304,10 @@ export function RoadmapBoard({
               <p className="text-gray-600 mb-6 text-lg">
                 Get started by adding your first objective to organize your roadmap items.
               </p>
-              {canEdit && (
-                <Button onClick={() => setShowSettingsModal(true)} className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Objective
-                </Button>
-              )}
+              <Button onClick={() => setShowSettingsModal(true)} className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Objective
+              </Button>
             </CardContent>
           </Card>
         ) : (
@@ -338,7 +337,10 @@ export function RoadmapBoard({
                     <div key={objective.id} className="grid grid-cols-4 gap-6 group mb-8">
                       {/* Objective Column */}
                       <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/50 flex items-center justify-between group-hover:shadow-xl transition-all duration-300">
-                        <div className="flex items-center gap-4">
+                        <div 
+                          className="flex items-center gap-4 flex-1 cursor-pointer"
+                          onClick={() => setEditingObjective(objective)}
+                        >
                           <div
                             className="w-6 h-6 rounded-full shadow-sm border-2 border-white"
                             style={{ backgroundColor: objective.color }}
@@ -347,16 +349,14 @@ export function RoadmapBoard({
                             <h3 className="font-semibold text-gray-900 text-lg">{objective.title}</h3>
                           </div>
                         </div>
-                        {canEdit && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setShowSettingsModal(true)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity rounded-xl"
-                          >
-                            <Edit3 className="h-4 w-4" />
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingObjective(objective)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity rounded-xl"
+                        >
+                          <Edit3 className="h-4 w-4" />
+                        </Button>
                       </div>
 
                       {/* Status Columns */}
@@ -528,23 +528,24 @@ export function RoadmapBoard({
                       {/* Objective Header */}
                       <div className="p-6 border-b border-gray-200/50">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
+                          <div 
+                            className="flex items-center gap-3 flex-1 cursor-pointer"
+                            onClick={() => setEditingObjective(objective)}
+                          >
                             <div
                               className="w-5 h-5 rounded-full shadow-sm border-2 border-white"
                               style={{ backgroundColor: objective.color }}
                             />
                             <h3 className="font-semibold text-gray-900 text-lg">{objective.title}</h3>
                           </div>
-                          {canEdit && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setShowSettingsModal(true)}
-                              className="rounded-xl"
-                            >
-                              <Edit3 className="h-4 w-4" />
-                            </Button>
-                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingObjective(objective)}
+                            className="rounded-xl"
+                          >
+                            <Edit3 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
 
@@ -728,6 +729,24 @@ export function RoadmapBoard({
           modules={roadmap.modules}
           initialTab="modules"
           initialEditingModule={editingModule}
+          onAddObjective={onAddObjective!}
+          onUpdateObjective={onUpdateObjective!}
+          onDeleteObjective={onDeleteObjective!}
+          onAddModule={onAddModule!}
+          onUpdateModule={onUpdateModule!}
+          onDeleteModule={onDeleteModule!}
+        />
+      )}
+
+      {/* Objective Edit Modal */}
+      {editingObjective && (
+        <SettingsModal
+          isOpen={true}
+          onClose={() => setEditingObjective(null)}
+          objectives={roadmap.objectives}
+          modules={roadmap.modules}
+          initialTab="objectives"
+          initialEditingObjective={editingObjective}
           onAddObjective={onAddObjective!}
           onUpdateObjective={onUpdateObjective!}
           onDeleteObjective={onDeleteObjective!}

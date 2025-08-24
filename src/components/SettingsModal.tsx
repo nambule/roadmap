@@ -21,6 +21,7 @@ interface SettingsModalProps {
   onDeleteModule: (id: string) => Promise<void>
   initialTab?: 'objectives' | 'modules'
   initialEditingModule?: Module
+  initialEditingObjective?: Objective
 }
 
 type EditingItem = {
@@ -49,7 +50,8 @@ export function SettingsModal({
   onUpdateModule,
   onDeleteModule,
   initialTab = 'objectives',
-  initialEditingModule
+  initialEditingModule,
+  initialEditingObjective
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<'objectives' | 'modules'>(initialTab)
   const [editing, setEditing] = useState<EditingItem>(null)
@@ -67,8 +69,17 @@ export function SettingsModal({
         description: initialEditingModule.description || undefined
       })
       setActiveTab('modules')
+    } else if (initialEditingObjective) {
+      setEditing({
+        type: 'objective',
+        id: initialEditingObjective.id,
+        title: initialEditingObjective.title,
+        color: initialEditingObjective.color,
+        description: undefined
+      })
+      setActiveTab('objectives')
     }
-  }, [initialEditingModule])
+  }, [initialEditingModule, initialEditingObjective])
 
   const handleAddItem = async () => {
     if (!newItemTitle.trim()) return
