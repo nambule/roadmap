@@ -17,8 +17,7 @@ import {
   List,
   Maximize,
   Minimize,
-  Home,
-  Trash2
+  Home
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -68,7 +67,7 @@ const statusColumns: { key: RoadmapStatus; title: string; gradient: string; text
 
 export function RoadmapBoard({
   roadmap,
-  detailLevel = 'standard',
+  detailLevel = 'full',
   viewType = 'objective',
   onDetailLevelChange,
   onViewTypeChange,
@@ -185,18 +184,6 @@ export function RoadmapBoard({
                     {roadmap.title}
                   </h1>
                 )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    if (confirm('Are you sure you want to delete this roadmap? This action cannot be undone.')) {
-                      onDeleteRoadmap?.()
-                    }
-                  }}
-                  className="rounded-xl hover:bg-red-100 hover:text-red-600 p-2"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
               </div>
               {roadmap.description && (
                 <p className="text-xs sm:text-sm text-gray-600 mt-1 lg:mt-2 line-clamp-2">{roadmap.description}</p>
@@ -228,20 +215,12 @@ export function RoadmapBoard({
                         <Grid3X3 className="h-3 w-3 lg:h-4 lg:w-4" />
                       </Button>
                       <Button
-                        variant={detailLevel === 'standard' ? 'default' : 'ghost'}
+                        variant={detailLevel === 'full' ? 'default' : 'ghost'}
                         size="sm"
                         className="rounded-lg"
-                        onClick={() => onDetailLevelChange?.('standard')}
+                        onClick={() => onDetailLevelChange?.('full')}
                       >
                         <List className="h-3 w-3 lg:h-4 lg:w-4" />
-                      </Button>
-                      <Button
-                        variant={detailLevel === 'rich' ? 'default' : 'ghost'}
-                        size="sm"
-                        className="rounded-lg"
-                        onClick={() => onDetailLevelChange?.('rich')}
-                      >
-                        <Settings className="h-3 w-3 lg:h-4 lg:w-4" />
                       </Button>
                     </div>
                     

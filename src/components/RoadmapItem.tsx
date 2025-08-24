@@ -47,12 +47,12 @@ export function RoadmapItem({
   onComment,
   isDragging = false
 }: RoadmapItemProps) {
-  const [showDescription, setShowDescription] = useState(detailLevel === 'rich')
+  const [showDescription, setShowDescription] = useState(detailLevel === 'full')
   const [isHovered, setIsHovered] = useState(false)
 
   const canEdit = viewMode === 'edit'
   const isCompact = detailLevel === 'compact'
-  const isRich = detailLevel === 'rich'
+  const isFull = detailLevel === 'full'
   const categoryStyle = categoryStyles[item.category]
 
   return (
@@ -117,7 +117,7 @@ export function RoadmapItem({
           
           {!isCompact && item.description && (
             <div className="mb-3">
-              {isRich || showDescription ? (
+              {isFull || showDescription ? (
                 <p className="text-xs text-gray-600 leading-relaxed line-clamp-3">
                   {item.description}
                 </p>

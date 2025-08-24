@@ -17,7 +17,7 @@ export default function RoadmapPage() {
 
   const [roadmap, setRoadmap] = useState<RoadmapWithData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [detailLevel, setDetailLevel] = useState<DetailLevel>('standard')
+  const [detailLevel, setDetailLevel] = useState<DetailLevel>('full')
   const [viewType, setViewType] = useState<ViewType>('objective')
 
   useEffect(() => {

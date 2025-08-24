@@ -21,7 +21,7 @@ export type UpdateComment = Database['public']['Tables']['comments']['Update']
 export type RoadmapStatus = 'now' | 'next' | 'later'
 export type ItemCategory = 'tech' | 'business' | 'mixed'
 export type ViewMode = 'read-only' | 'edit'
-export type DetailLevel = 'compact' | 'standard' | 'rich'
+export type DetailLevel = 'compact' | 'full'
 export type ViewType = 'objective' | 'module'
 
 export interface RoadmapWithData extends Roadmap {
