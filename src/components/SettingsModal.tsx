@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from './ui/Modal'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
@@ -19,6 +19,8 @@ interface SettingsModalProps {
   onAddModule: (module: NewModule) => Promise<void>
   onUpdateModule: (id: string, updates: Partial<Module>) => Promise<void>
   onDeleteModule: (id: string) => Promise<void>
+  initialTab?: 'objectives' | 'modules'
+  initialEditingModule?: Module
 }
 
 type EditingItem = {
@@ -45,13 +47,28 @@ export function SettingsModal({
   onDeleteObjective,
   onAddModule,
   onUpdateModule,
-  onDeleteModule
+  onDeleteModule,
+  initialTab = 'objectives',
+  initialEditingModule
 }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<'objectives' | 'modules'>('objectives')
+  const [activeTab, setActiveTab] = useState<'objectives' | 'modules'>(initialTab)
   const [editing, setEditing] = useState<EditingItem>(null)
   const [newItemTitle, setNewItemTitle] = useState('')
   const [newItemColor, setNewItemColor] = useState(DEFAULT_COLORS[0])
   const [newItemDescription, setNewItemDescription] = useState('')
+
+  useEffect(() => {
+    if (initialEditingModule) {
+      setEditing({
+        type: 'module',
+        id: initialEditingModule.id,
+        title: initialEditingModule.title,
+        color: initialEditingModule.color,
+        description: initialEditingModule.description || undefined
+      })
+      setActiveTab('modules')
+    }
+  }, [initialEditingModule])
 
   const handleAddItem = async () => {
     if (!newItemTitle.trim()) return

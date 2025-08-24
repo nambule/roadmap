@@ -12,21 +12,20 @@ import {
   Share2, 
   Download, 
   Plus, 
-  Eye, 
   Edit3,
   Grid3X3,
   List,
   Maximize,
-  Minimize
+  Minimize,
+  Home,
+  Trash2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface RoadmapBoardProps {
   roadmap: RoadmapWithData
-  viewMode?: ViewMode
   detailLevel?: DetailLevel
   viewType?: ViewType
-  onViewModeChange?: (mode: ViewMode) => void
   onDetailLevelChange?: (level: DetailLevel) => void
   onViewTypeChange?: (type: ViewType) => void
   onShare?: () => void
@@ -41,6 +40,9 @@ interface RoadmapBoardProps {
   onCreateObjective?: (title: string) => Promise<Objective>
   onDeleteItem?: (item: RoadmapItemType) => void
   onCommentItem?: (item: RoadmapItemType) => void
+  onUpdateRoadmap?: (updates: Partial<RoadmapWithData>) => Promise<void>
+  onDeleteRoadmap?: () => Promise<void>
+  onNavigateHome?: () => void
 }
 
 const statusColumns: { key: RoadmapStatus; title: string; gradient: string; textColor: string }[] = [
@@ -66,10 +68,8 @@ const statusColumns: { key: RoadmapStatus; title: string; gradient: string; text
 
 export function RoadmapBoard({
   roadmap,
-  viewMode = 'read-only',
   detailLevel = 'standard',
   viewType = 'objective',
-  onViewModeChange,
   onDetailLevelChange,
   onViewTypeChange,
   onShare,
@@ -84,13 +84,19 @@ export function RoadmapBoard({
   onCreateObjective,
   onDeleteItem,
   onCommentItem,
+  onUpdateRoadmap,
+  onDeleteRoadmap,
+  onNavigateHome,
 }: RoadmapBoardProps) {
   const [showControls, setShowControls] = useState(true)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [editingItem, setEditingItem] = useState<RoadmapItemType | null>(null)
   const [isCreatingItem, setIsCreatingItem] = useState(false)
+  const [editingRoadmapTitle, setEditingRoadmapTitle] = useState(false)
+  const [roadmapTitle, setRoadmapTitle] = useState(roadmap.title)
+  const [editingModule, setEditingModule] = useState<Module | null>(null)
   
-  const canEdit = viewMode === 'edit'
+  const canEdit = true // Always in edit mode now
 
   const getItemsForObjectiveAndStatus = (objectiveId: string, status: RoadmapStatus) => {
     const objective = roadmap.objectives.find(obj => obj.id === objectiveId)
@@ -135,9 +141,62 @@ export function RoadmapBoard({
         <div className="max-w-[95rem] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-start justify-between py-4 lg:py-6 gap-4">
             <div className="flex-1 min-w-0">
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent truncate">
-                {roadmap.title}
-              </h1>
+              <div className="flex items-center gap-3 mb-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onNavigateHome}
+                  className="rounded-xl hover:bg-white/60 p-2"
+                >
+                  <Home className="h-4 w-4" />
+                </Button>
+                {editingRoadmapTitle ? (
+                  <input
+                    type="text"
+                    value={roadmapTitle}
+                    onChange={(e) => setRoadmapTitle(e.target.value)}
+                    onBlur={() => {
+                      setEditingRoadmapTitle(false)
+                      if (roadmapTitle !== roadmap.title && onUpdateRoadmap) {
+                        onUpdateRoadmap({ title: roadmapTitle })
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setEditingRoadmapTitle(false)
+                        if (roadmapTitle !== roadmap.title && onUpdateRoadmap) {
+                          onUpdateRoadmap({ title: roadmapTitle })
+                        }
+                      }
+                      if (e.key === 'Escape') {
+                        setRoadmapTitle(roadmap.title)
+                        setEditingRoadmapTitle(false)
+                      }
+                    }}
+                    className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent bg-transparent border-none outline-none flex-1"
+                    autoFocus
+                  />
+                ) : (
+                  <h1 
+                    className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => setEditingRoadmapTitle(true)}
+                  >
+                    {roadmap.title}
+                  </h1>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm('Are you sure you want to delete this roadmap? This action cannot be undone.')) {
+                      onDeleteRoadmap?.()
+                    }
+                  }}
+                  className="rounded-xl hover:bg-red-100 hover:text-red-600 p-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
               {roadmap.description && (
                 <p className="text-xs sm:text-sm text-gray-600 mt-1 lg:mt-2 line-clamp-2">{roadmap.description}</p>
               )}
@@ -157,28 +216,6 @@ export function RoadmapBoard({
                 <div className="flex flex-col lg:flex-row items-end lg:items-center gap-2 lg:gap-3">
                   {/* Mobile: Stack vertically, Desktop: Horizontal */}
                   <div className="flex items-center gap-2 lg:gap-3">
-                    <div className="flex items-center bg-white/60 backdrop-blur-sm rounded-xl p-1 border border-gray-200/50">
-                      <Button
-                        variant={viewMode === 'read-only' ? 'default' : 'ghost'}
-                        size="sm"
-                        className="rounded-lg text-xs lg:text-sm px-2 lg:px-3"
-                        onClick={() => onViewModeChange?.('read-only')}
-                      >
-                        <Eye className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
-                        <span className="hidden lg:inline">View</span>
-                      </Button>
-                      {canEdit && (
-                        <Button
-                          variant={viewMode === 'edit' ? 'default' : 'ghost'}
-                          size="sm"
-                          className="rounded-lg text-xs lg:text-sm px-2 lg:px-3"
-                          onClick={() => onViewModeChange?.('edit')}
-                        >
-                          <Edit3 className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
-                          <span className="hidden lg:inline">Edit</span>
-                        </Button>
-                      )}
-                    </div>
                     
                     <div className="hidden sm:flex items-center bg-white/60 backdrop-blur-sm rounded-xl p-1 border border-gray-200/50">
                       <Button
@@ -238,19 +275,15 @@ export function RoadmapBoard({
                       <span className="hidden lg:inline">Export</span>
                     </Button>
                     
-                    {canEdit && (
-                      <>
-                        <Button variant="outline" size="sm" className="rounded-xl bg-white/60 backdrop-blur-sm border-gray-200/50 px-2 lg:px-3" onClick={() => setShowSettingsModal(true)}>
-                          <Settings className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
-                          <span className="hidden lg:inline">Settings</span>
-                        </Button>
-                        
-                        <Button size="sm" className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-2 lg:px-3" onClick={() => setIsCreatingItem(true)}>
-                          <Plus className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
-                          <span className="hidden sm:inline">Add Item</span>
-                        </Button>
-                      </>
-                    )}
+                    <Button variant="outline" size="sm" className="rounded-xl bg-white/60 backdrop-blur-sm border-gray-200/50 px-2 lg:px-3" onClick={() => setShowSettingsModal(true)}>
+                      <Settings className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
+                      <span className="hidden lg:inline">Settings</span>
+                    </Button>
+                    
+                    <Button size="sm" className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-2 lg:px-3" onClick={() => setIsCreatingItem(true)}>
+                      <Plus className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
+                      <span className="hidden sm:inline">Add Item</span>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -336,16 +369,14 @@ export function RoadmapBoard({
                               <span className={cn("font-medium text-sm", column.textColor)}>
                                 {items.length} items
                               </span>
-                              {canEdit && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 rounded-xl hover:bg-white/60"
-                                  onClick={() => setIsCreatingItem(true)}
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </Button>
-                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 rounded-xl hover:bg-white/60"
+                                onClick={() => setIsCreatingItem(true)}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
                             </div>
                             
                             {/* Multi-column card grid */}
@@ -359,7 +390,7 @@ export function RoadmapBoard({
                                 <RoadmapItem
                                   key={item.id}
                                   item={item}
-                                  viewMode={viewMode}
+                                  viewMode="edit"
                                   detailLevel={detailLevel}
                                   onEdit={() => setEditingItem(item)}
                                   onDelete={onDeleteItem}
@@ -369,23 +400,17 @@ export function RoadmapBoard({
                               
                               {items.length === 0 && (
                                 <div className="col-span-full">
-                                  {canEdit ? (
-                                    <div className="text-center py-8">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-gray-500 hover:text-gray-700 rounded-xl hover:bg-white/40"
-                                        onClick={() => setIsCreatingItem(true)}
-                                      >
-                                        <Plus className="h-4 w-4 mr-2" />
-                                        Add item
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <div className="text-center py-8 text-gray-400 text-sm">
-                                      No items
-                                    </div>
-                                  )}
+                                  <div className="text-center py-8">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-gray-500 hover:text-gray-700 rounded-xl hover:bg-white/40"
+                                      onClick={() => setIsCreatingItem(true)}
+                                    >
+                                      <Plus className="h-4 w-4 mr-2" />
+                                      Add item
+                                    </Button>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -418,7 +443,10 @@ export function RoadmapBoard({
                   <div key={module.id} className="grid grid-cols-4 gap-6 group mb-8">
                     {/* Module Column */}
                     <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/50 flex items-center justify-between group-hover:shadow-xl transition-all duration-300">
-                      <div className="flex items-center gap-4">
+                      <div 
+                        className="flex items-center gap-4 flex-1 cursor-pointer"
+                        onClick={() => module.id !== 'unassigned' && setEditingModule(module)}
+                      >
                         <div
                           className="w-6 h-6 rounded-full shadow-sm border-2 border-white"
                           style={{ backgroundColor: module.color }}
@@ -430,6 +458,16 @@ export function RoadmapBoard({
                           )}
                         </div>
                       </div>
+                      {module.id !== 'unassigned' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingModule(module)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity rounded-xl"
+                        >
+                          <Edit3 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
 
                     {/* Status Columns */}
@@ -458,7 +496,7 @@ export function RoadmapBoard({
                               <RoadmapItem
                                 key={item.id}
                                 item={item}
-                                viewMode={viewMode}
+                                viewMode="edit"
                                 detailLevel={detailLevel}
                                 onEdit={() => setEditingItem(item)}
                                 onDelete={onDeleteItem}
@@ -530,16 +568,14 @@ export function RoadmapBoard({
                                     {column.title} ({items.length})
                                   </h4>
                                 </div>
-                                {canEdit && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 rounded-xl hover:bg-white/60"
-                                    onClick={() => setIsCreatingItem(true)}
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                  </Button>
-                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 rounded-xl hover:bg-white/60"
+                                  onClick={() => setIsCreatingItem(true)}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </Button>
                               </div>
                               
                               {items.length > 0 ? (
@@ -551,7 +587,7 @@ export function RoadmapBoard({
                                     <RoadmapItem
                                       key={item.id}
                                       item={item}
-                                      viewMode={viewMode}
+                                      viewMode="edit"
                                       detailLevel={detailLevel}
                                       onEdit={() => setEditingItem(item)}
                                       onDelete={onDeleteItem}
@@ -559,7 +595,7 @@ export function RoadmapBoard({
                                     />
                                   ))}
                                 </div>
-                              ) : canEdit ? (
+                              ) : (
                                 <div className="text-center py-6">
                                   <Button
                                     variant="ghost"
@@ -571,8 +607,6 @@ export function RoadmapBoard({
                                     Add {column.title.toLowerCase()} item
                                   </Button>
                                 </div>
-                              ) : (
-                                <p className="text-gray-400 text-center py-6 text-sm">No items</p>
                               )}
                             </div>
                           )
@@ -585,17 +619,32 @@ export function RoadmapBoard({
                   <div key={module.id} className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/50 overflow-hidden">
                     {/* Module Header */}
                     <div className="p-6 border-b border-gray-200/50">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-5 h-5 rounded-full shadow-sm border-2 border-white"
-                          style={{ backgroundColor: module.color }}
-                        />
-                        <div>
-                          <h3 className="font-semibold text-gray-900 text-lg">{module.title}</h3>
-                          {module.description && (
-                            <p className="text-sm text-gray-600">{module.description}</p>
-                          )}
+                      <div className="flex items-center justify-between">
+                        <div 
+                          className="flex items-center gap-3 flex-1 cursor-pointer"
+                          onClick={() => module.id !== 'unassigned' && setEditingModule(module)}
+                        >
+                          <div
+                            className="w-5 h-5 rounded-full shadow-sm border-2 border-white"
+                            style={{ backgroundColor: module.color }}
+                          />
+                          <div>
+                            <h3 className="font-semibold text-gray-900 text-lg">{module.title}</h3>
+                            {module.description && (
+                              <p className="text-sm text-gray-600">{module.description}</p>
+                            )}
+                          </div>
                         </div>
+                        {module.id !== 'unassigned' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingModule(module)}
+                            className="rounded-xl"
+                          >
+                            <Edit3 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
 
@@ -633,7 +682,7 @@ export function RoadmapBoard({
                                   <RoadmapItem
                                     key={item.id}
                                     item={item}
-                                    viewMode={viewMode}
+                                    viewMode="edit"
                                     detailLevel={detailLevel}
                                     onEdit={() => setEditingItem(item)}
                                     onDelete={onDeleteItem}
@@ -657,12 +706,28 @@ export function RoadmapBoard({
       </div>
 
       {/* Settings Modal */}
-      {canEdit && (
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        objectives={roadmap.objectives}
+        modules={roadmap.modules}
+        onAddObjective={onAddObjective!}
+        onUpdateObjective={onUpdateObjective!}
+        onDeleteObjective={onDeleteObjective!}
+        onAddModule={onAddModule!}
+        onUpdateModule={onUpdateModule!}
+        onDeleteModule={onDeleteModule!}
+      />
+
+      {/* Module Edit Modal */}
+      {editingModule && (
         <SettingsModal
-          isOpen={showSettingsModal}
-          onClose={() => setShowSettingsModal(false)}
+          isOpen={true}
+          onClose={() => setEditingModule(null)}
           objectives={roadmap.objectives}
           modules={roadmap.modules}
+          initialTab="modules"
+          initialEditingModule={editingModule}
           onAddObjective={onAddObjective!}
           onUpdateObjective={onUpdateObjective!}
           onDeleteObjective={onDeleteObjective!}
@@ -673,22 +738,20 @@ export function RoadmapBoard({
       )}
 
       {/* Item Edit Modal */}
-      {canEdit && (
-        <ItemEditModal
-          isOpen={editingItem !== null || isCreatingItem}
-          onClose={() => {
-            setEditingItem(null)
-            setIsCreatingItem(false)
-          }}
-          item={editingItem}
-          objectives={roadmap.objectives}
-          modules={roadmap.modules}
-          onSave={async (updates) => {
-            await onSaveItem?.(editingItem, updates)
-          }}
-          onCreateObjective={onCreateObjective}
-        />
-      )}
+      <ItemEditModal
+        isOpen={editingItem !== null || isCreatingItem}
+        onClose={() => {
+          setEditingItem(null)
+          setIsCreatingItem(false)
+        }}
+        item={editingItem}
+        objectives={roadmap.objectives}
+        modules={roadmap.modules}
+        onSave={async (updates) => {
+          await onSaveItem?.(editingItem, updates)
+        }}
+        onCreateObjective={onCreateObjective}
+      />
     </div>
   )
 }

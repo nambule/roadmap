@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase'
 import { RoadmapWithData, ViewMode, DetailLevel, ViewType, RoadmapItem as RoadmapItemType, Objective, Module, NewObjective, NewModule } from '@/types'
@@ -11,12 +11,12 @@ import toast from 'react-hot-toast'
 
 export default function RoadmapPage() {
   const params = useParams()
+  const router = useRouter()
   const { user } = useAuth()
   const roadmapId = params.id as string
 
   const [roadmap, setRoadmap] = useState<RoadmapWithData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<ViewMode>('read-only')
   const [detailLevel, setDetailLevel] = useState<DetailLevel>('standard')
   const [viewType, setViewType] = useState<ViewType>('objective')
 
@@ -24,7 +24,7 @@ export default function RoadmapPage() {
     if (roadmapId) {
       fetchRoadmap()
     }
-  }, [roadmapId, user])
+  }, [roadmapId, user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchRoadmap = async () => {
     try {
@@ -70,11 +70,6 @@ export default function RoadmapPage() {
       }
 
       setRoadmap(roadmapWithData)
-      
-      // Set edit mode if user owns the roadmap
-      if (user && roadmapData.user_id === user.id) {
-        setViewMode('edit')
-      }
     } catch (error) {
       toast.error('Failed to fetch roadmap')
       console.error(error)
@@ -335,6 +330,48 @@ export default function RoadmapPage() {
     toast.success('Comment functionality will be implemented')
   }
 
+  const handleUpdateRoadmap = async (updates: Partial<RoadmapWithData>) => {
+    if (!user || !roadmap) return
+
+    try {
+      const { error } = await supabase
+        .from('roadmaps')
+        .update(updates)
+        .eq('id', roadmap.id)
+
+      if (error) throw error
+
+      setRoadmap(prev => prev ? { ...prev, ...updates } : null)
+      toast.success('Roadmap updated')
+    } catch (error) {
+      toast.error('Failed to update roadmap')
+      console.error(error)
+    }
+  }
+
+  const handleDeleteRoadmap = async () => {
+    if (!user || !roadmap) return
+
+    try {
+      const { error } = await supabase
+        .from('roadmaps')
+        .delete()
+        .eq('id', roadmap.id)
+
+      if (error) throw error
+
+      toast.success('Roadmap deleted')
+      router.push('/')
+    } catch (error) {
+      toast.error('Failed to delete roadmap')
+      console.error(error)
+    }
+  }
+
+  const handleNavigateHome = () => {
+    router.push('/')
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -348,7 +385,7 @@ export default function RoadmapPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Roadmap not found</h1>
-          <p className="text-gray-600">The roadmap you're looking for doesn't exist.</p>
+          <p className="text-gray-600">The roadmap you&apos;re looking for doesn&apos;t exist.</p>
         </div>
       </div>
     )
@@ -358,21 +395,19 @@ export default function RoadmapPage() {
     <AuthGuard fallback={
       <RoadmapBoard
         roadmap={roadmap}
-        viewMode="read-only"
         detailLevel={detailLevel}
         viewType={viewType}
         onDetailLevelChange={setDetailLevel}
         onViewTypeChange={setViewType}
         onShare={handleShare}
         onExport={handleExport}
+        onNavigateHome={handleNavigateHome}
       />
     }>
       <RoadmapBoard
         roadmap={roadmap}
-        viewMode={viewMode}
         detailLevel={detailLevel}
         viewType={viewType}
-        onViewModeChange={setViewMode}
         onDetailLevelChange={setDetailLevel}
         onViewTypeChange={setViewType}
         onShare={handleShare}
@@ -387,6 +422,9 @@ export default function RoadmapPage() {
         onCreateObjective={handleCreateObjective}
         onDeleteItem={handleDeleteItem}
         onCommentItem={handleComment}
+        onUpdateRoadmap={handleUpdateRoadmap}
+        onDeleteRoadmap={handleDeleteRoadmap}
+        onNavigateHome={handleNavigateHome}
       />
     </AuthGuard>
   )
