@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Modal } from './ui/Modal'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
-import { Plus } from 'lucide-react'
-import { RoadmapItem, Objective, Module, RoadmapStatus, ItemCategory } from '@/types'
+import { Plus, Trash2 } from 'lucide-react'
+import { RoadmapItem, Objective, Module, Team, RoadmapStatus, ItemCategory } from '@/types'
 import { cn } from '@/lib/utils'
 
 interface ItemEditModalProps {
@@ -14,8 +14,14 @@ interface ItemEditModalProps {
   item: RoadmapItem | null
   objectives: Objective[]
   modules: Module[]
+  teams: Team[]
   onSave: (updates: Partial<RoadmapItem>) => Promise<void>
+  onDelete?: (item: RoadmapItem) => Promise<void>
   onCreateObjective?: (title: string) => Promise<Objective>
+  defaultObjectiveId?: string | null
+  defaultModuleId?: string | null
+  defaultTeamId?: string | null
+  defaultStatus?: RoadmapStatus
 }
 
 const STATUS_OPTIONS: { value: RoadmapStatus; label: string; color: string }[] = [
@@ -36,8 +42,14 @@ export function ItemEditModal({
   item,
   objectives,
   modules,
+  teams,
   onSave,
-  onCreateObjective
+  onDelete,
+  onCreateObjective,
+  defaultObjectiveId,
+  defaultModuleId,
+  defaultTeamId,
+  defaultStatus
 }: ItemEditModalProps) {
   const [formData, setFormData] = useState({
     title: '',
@@ -46,10 +58,22 @@ export function ItemEditModal({
     category: 'business' as ItemCategory,
     objective_id: null as string | null,
     module_id: null as string | null,
+    team_id: null as string | null,
     tags: [] as string[]
   })
   const [newObjectiveTitle, setNewObjectiveTitle] = useState('')
   const [isCreatingObjective, setIsCreatingObjective] = useState(false)
+
+  const handleSaveAndClose = useCallback(async () => {
+    if (!formData.title.trim()) return
+    
+    try {
+      await onSave(formData)
+      onClose()
+    } catch (error) {
+      console.error('Failed to save item:', error)
+    }
+  }, [formData, onSave, onClose])
 
   useEffect(() => {
     if (item) {
@@ -60,20 +84,49 @@ export function ItemEditModal({
         category: item.category,
         objective_id: item.objective_id,
         module_id: item.module_id,
+        team_id: item.team_id,
         tags: item.tags || []
       })
     } else {
       setFormData({
         title: '',
         description: '',
-        status: 'now',
+        status: defaultStatus || 'now',
         category: 'business',
-        objective_id: null,
-        module_id: null,
+        objective_id: defaultObjectiveId || null,
+        module_id: defaultModuleId || null,
+        team_id: defaultTeamId || null,
         tags: []
       })
     }
-  }, [item])
+  }, [item, defaultObjectiveId, defaultModuleId, defaultTeamId, defaultStatus])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        const target = e.target as HTMLElement
+        // Don't trigger on multiline textarea or when Ctrl/Cmd+Enter
+        if (target.tagName === 'TEXTAREA' || (e.ctrlKey || e.metaKey)) {
+          return
+        }
+        // If we're in a regular input and it's not the title input, return
+        if (target.tagName === 'INPUT' && target !== document.activeElement) {
+          return
+        }
+        
+        e.preventDefault()
+        handleSaveAndClose()
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown)
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen, handleSaveAndClose])
 
   const handleSave = async () => {
     if (!formData.title.trim()) return
@@ -98,6 +151,19 @@ export function ItemEditModal({
       console.error('Failed to create objective:', error)
     } finally {
       setIsCreatingObjective(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!item || !onDelete) return
+    
+    if (confirm(`Are you sure you want to delete "${item.title}"?`)) {
+      try {
+        await onDelete(item)
+        onClose()
+      } catch (error) {
+        console.error('Failed to delete item:', error)
+      }
     }
   }
 
@@ -205,6 +271,30 @@ export function ItemEditModal({
           )}
         </div>
 
+        {/* Team Assignment */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Team
+          </label>
+          <select
+            value={formData.team_id || ''}
+            onChange={(e) => setFormData({ ...formData, team_id: e.target.value || null })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">No team assigned</option>
+            {teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.title}
+              </option>
+            ))}
+          </select>
+          {teams.length === 0 && (
+            <p className="text-sm text-gray-500 mt-1">
+              No teams available. Create teams in Settings to assign items to them.
+            </p>
+          )}
+        </div>
+
         {/* Objective Assignment */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -267,10 +357,20 @@ export function ItemEditModal({
 
         {/* Action Buttons */}
         <div className="flex gap-3 pt-4 border-t border-gray-200">
-          <Button onClick={handleSave} disabled={!formData.title.trim()} className="flex-1">
+          <Button onClick={handleSaveAndClose} disabled={!formData.title.trim()} className="flex-1">
             {item ? 'Save Changes' : 'Create Item'}
           </Button>
-          <Button variant="outline" onClick={onClose} className="flex-1">
+          {item && onDelete && (
+            <Button 
+              variant="outline" 
+              onClick={handleDelete}
+              className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Delete
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
         </div>

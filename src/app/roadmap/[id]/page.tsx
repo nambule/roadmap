@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase'
-import { RoadmapWithData, ViewMode, DetailLevel, ViewType, RoadmapItem as RoadmapItemType, Objective, Module, NewObjective, NewModule } from '@/types'
+import { RoadmapWithData, ViewMode, DetailLevel, ViewType, CardLayout, RoadmapItem as RoadmapItemType, Objective, Module, Team, NewObjective, NewModule, NewTeam } from '@/types'
 import { AuthGuard } from '@/components/AuthGuard'
 import { RoadmapBoard } from '@/components/RoadmapBoard'
 import toast from 'react-hot-toast'
@@ -19,6 +19,7 @@ export default function RoadmapPage() {
   const [loading, setLoading] = useState(true)
   const [detailLevel, setDetailLevel] = useState<DetailLevel>('full')
   const [viewType, setViewType] = useState<ViewType>('objective')
+  const [cardLayout, setCardLayout] = useState<CardLayout>('full')
 
   useEffect(() => {
     if (roadmapId) {
@@ -52,6 +53,14 @@ export default function RoadmapPage() {
 
       if (modulesError) throw modulesError
 
+      const { data: teamsData, error: teamsError } = await supabase
+        .from('teams')
+        .select('*')
+        .eq('roadmap_id', roadmapId)
+        .order('order_index')
+
+      if (teamsError) throw teamsError
+
       const { data: itemsData, error: itemsError } = await supabase
         .from('roadmap_items')
         .select('*')
@@ -66,7 +75,8 @@ export default function RoadmapPage() {
           ...objective,
           items: (itemsData || []).filter(item => item.objective_id === objective.id)
         })),
-        modules: modulesData || []
+        modules: modulesData || [],
+        teams: teamsData || []
       }
 
       setRoadmap(roadmapWithData)
@@ -217,6 +227,77 @@ export default function RoadmapPage() {
       toast.success('Module deleted')
     } catch (error) {
       toast.error('Failed to delete module')
+      console.error(error)
+    }
+  }
+
+  const handleAddTeam = async (team: NewTeam) => {
+    if (!user || !roadmap) return
+
+    try {
+      const { data, error } = await supabase
+        .from('teams')
+        .insert({
+          ...team,
+          roadmap_id: roadmap.id
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setRoadmap(prev => prev ? {
+        ...prev,
+        teams: [...prev.teams, data]
+      } : null)
+
+      toast.success('Team added')
+    } catch (error) {
+      toast.error('Failed to add team')
+      console.error(error)
+    }
+  }
+
+  const handleUpdateTeam = async (id: string, updates: Partial<Team>) => {
+    try {
+      const { error } = await supabase
+        .from('teams')
+        .update(updates)
+        .eq('id', id)
+
+      if (error) throw error
+
+      setRoadmap(prev => prev ? {
+        ...prev,
+        teams: prev.teams.map(team => 
+          team.id === id ? { ...team, ...updates } : team
+        )
+      } : null)
+
+      toast.success('Team updated')
+    } catch (error) {
+      toast.error('Failed to update team')
+      console.error(error)
+    }
+  }
+
+  const handleDeleteTeam = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('teams')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+
+      setRoadmap(prev => prev ? {
+        ...prev,
+        teams: prev.teams.filter(team => team.id !== id)
+      } : null)
+
+      toast.success('Team deleted')
+    } catch (error) {
+      toast.error('Failed to delete team')
       console.error(error)
     }
   }
@@ -397,8 +478,10 @@ export default function RoadmapPage() {
         roadmap={roadmap}
         detailLevel={detailLevel}
         viewType={viewType}
+        cardLayout={cardLayout}
         onDetailLevelChange={setDetailLevel}
         onViewTypeChange={setViewType}
+        onCardLayoutChange={setCardLayout}
         onShare={handleShare}
         onExport={handleExport}
         onNavigateHome={handleNavigateHome}
@@ -408,8 +491,10 @@ export default function RoadmapPage() {
         roadmap={roadmap}
         detailLevel={detailLevel}
         viewType={viewType}
+        cardLayout={cardLayout}
         onDetailLevelChange={setDetailLevel}
         onViewTypeChange={setViewType}
+        onCardLayoutChange={setCardLayout}
         onShare={handleShare}
         onExport={handleExport}
         onAddObjective={handleAddObjective}
@@ -418,6 +503,9 @@ export default function RoadmapPage() {
         onAddModule={handleAddModule}
         onUpdateModule={handleUpdateModule}
         onDeleteModule={handleDeleteModule}
+        onAddTeam={handleAddTeam}
+        onUpdateTeam={handleUpdateTeam}
+        onDeleteTeam={handleDeleteTeam}
         onSaveItem={handleSaveItem}
         onCreateObjective={handleCreateObjective}
         onDeleteItem={handleDeleteItem}

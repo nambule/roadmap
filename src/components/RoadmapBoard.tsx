@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { RoadmapWithData, ViewMode, DetailLevel, ViewType, RoadmapItem as RoadmapItemType, Objective, Module, RoadmapStatus, NewObjective, NewModule } from '@/types'
+import { RoadmapWithData, ViewMode, DetailLevel, ViewType, CardLayout, RoadmapItem as RoadmapItemType, Objective, Module, Team, RoadmapStatus, NewObjective, NewModule, NewTeam } from '@/types'
 import { RoadmapItem } from './RoadmapItem'
 import { SettingsModal } from './SettingsModal'
 import { ItemEditModal } from './ItemEditModal'
@@ -13,11 +13,13 @@ import {
   Download, 
   Plus, 
   Edit3,
-  Grid3X3,
-  List,
+  MoreHorizontal,
+  AlignJustify,
   Maximize,
   Minimize,
-  Home
+  Home,
+  Columns2,
+  RectangleHorizontal
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -25,8 +27,10 @@ interface RoadmapBoardProps {
   roadmap: RoadmapWithData
   detailLevel?: DetailLevel
   viewType?: ViewType
+  cardLayout?: CardLayout
   onDetailLevelChange?: (level: DetailLevel) => void
   onViewTypeChange?: (type: ViewType) => void
+  onCardLayoutChange?: (layout: CardLayout) => void
   onShare?: () => void
   onExport?: () => void
   onAddObjective?: (objective: NewObjective) => Promise<void>
@@ -35,6 +39,9 @@ interface RoadmapBoardProps {
   onAddModule?: (module: NewModule) => Promise<void>
   onUpdateModule?: (id: string, updates: Partial<Module>) => Promise<void>
   onDeleteModule?: (id: string) => Promise<void>
+  onAddTeam?: (team: NewTeam) => Promise<void>
+  onUpdateTeam?: (id: string, updates: Partial<Team>) => Promise<void>
+  onDeleteTeam?: (id: string) => Promise<void>
   onSaveItem?: (item: RoadmapItemType | null, updates: Partial<RoadmapItemType>) => Promise<void>
   onCreateObjective?: (title: string) => Promise<Objective>
   onDeleteItem?: (item: RoadmapItemType) => void
@@ -69,8 +76,10 @@ export function RoadmapBoard({
   roadmap,
   detailLevel = 'full',
   viewType = 'objective',
+  cardLayout = 'full',
   onDetailLevelChange,
   onViewTypeChange,
+  onCardLayoutChange,
   onShare,
   onExport,
   onAddObjective,
@@ -79,6 +88,9 @@ export function RoadmapBoard({
   onAddModule,
   onUpdateModule,
   onDeleteModule,
+  onAddTeam,
+  onUpdateTeam,
+  onDeleteTeam,
   onSaveItem,
   onCreateObjective,
   onDeleteItem,
@@ -95,6 +107,13 @@ export function RoadmapBoard({
   const [roadmapTitle, setRoadmapTitle] = useState(roadmap.title)
   const [editingModule, setEditingModule] = useState<Module | null>(null)
   const [editingObjective, setEditingObjective] = useState<Objective | null>(null)
+  const [editingTeam, setEditingTeam] = useState<Team | null>(null)
+  const [creationContext, setCreationContext] = useState<{
+    objectiveId?: string
+    moduleId?: string
+    teamId?: string
+    status?: RoadmapStatus
+  } | null>(null)
   
   const canEdit = true // Always in edit mode now
 
@@ -132,6 +151,35 @@ export function RoadmapBoard({
     }
     
     return modulesWithItems
+  }
+
+  const getItemsForTeamAndStatus = (teamId: string | null, status: RoadmapStatus) => {
+    const allItems = roadmap.objectives.flatMap(obj => obj.items)
+    return allItems.filter(item => item.team_id === teamId && item.status === status)
+      .sort((a, b) => a.order_index - b.order_index)
+  }
+
+  const getTeamsWithItems = () => {
+    const teamsWithItems = [...roadmap.teams].sort((a, b) => a.order_index - b.order_index)
+    
+    // Check if there are items without team assignments
+    const allItems = roadmap.objectives.flatMap(obj => obj.items)
+    const unassignedItems = allItems.filter(item => !item.team_id)
+    
+    if (unassignedItems.length > 0) {
+      teamsWithItems.push({
+        id: 'unassigned',
+        title: 'Unassigned',
+        color: '#94a3b8',
+        description: 'Items not assigned to any team',
+        order_index: 999,
+        roadmap_id: roadmap.id,
+        created_at: '',
+        updated_at: ''
+      } as Team)
+    }
+    
+    return teamsWithItems
   }
 
   return (
@@ -212,7 +260,7 @@ export function RoadmapBoard({
                         className="rounded-lg"
                         onClick={() => onDetailLevelChange?.('compact')}
                       >
-                        <Grid3X3 className="h-3 w-3 lg:h-4 lg:w-4" />
+                        <MoreHorizontal className="h-3 w-3 lg:h-4 lg:w-4" />
                       </Button>
                       <Button
                         variant={detailLevel === 'full' ? 'default' : 'ghost'}
@@ -220,7 +268,7 @@ export function RoadmapBoard({
                         className="rounded-lg"
                         onClick={() => onDetailLevelChange?.('full')}
                       >
-                        <List className="h-3 w-3 lg:h-4 lg:w-4" />
+                        <AlignJustify className="h-3 w-3 lg:h-4 lg:w-4" />
                       </Button>
                     </div>
                     
@@ -241,6 +289,33 @@ export function RoadmapBoard({
                       >
                         Modules
                       </Button>
+                      <Button
+                        variant={viewType === 'team' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="rounded-lg text-xs lg:text-sm px-2 lg:px-3"
+                        onClick={() => onViewTypeChange?.('team')}
+                      >
+                        Teams
+                      </Button>
+                    </div>
+                    
+                    <div className="flex items-center bg-white/60 backdrop-blur-sm rounded-xl p-1 border border-gray-200/50">
+                      <Button
+                        variant={cardLayout === 'full' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="rounded-lg"
+                        onClick={() => onCardLayoutChange?.('full')}
+                      >
+                        <RectangleHorizontal className="h-3 w-3 lg:h-4 lg:w-4" />
+                      </Button>
+                      <Button
+                        variant={cardLayout === 'compact' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="rounded-lg"
+                        onClick={() => onCardLayoutChange?.('compact')}
+                      >
+                        <Columns2 className="h-3 w-3 lg:h-4 lg:w-4" />
+                      </Button>
                     </div>
                   </div>
                   
@@ -260,7 +335,14 @@ export function RoadmapBoard({
                       <span className="hidden lg:inline">Settings</span>
                     </Button>
                     
-                    <Button size="sm" className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-2 lg:px-3" onClick={() => setIsCreatingItem(true)}>
+                    <Button 
+                      size="sm" 
+                      className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-2 lg:px-3" 
+                      onClick={() => {
+                        setCreationContext(null)
+                        setIsCreatingItem(true)
+                      }}
+                    >
                       <Plus className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
                       <span className="hidden sm:inline">Add Item</span>
                     </Button>
@@ -313,9 +395,9 @@ export function RoadmapBoard({
                 {roadmap.objectives
                   .sort((a, b) => a.order_index - b.order_index)
                   .map((objective) => (
-                    <div key={objective.id} className="grid grid-cols-4 gap-6 group mb-8">
+                    <div key={objective.id} className="grid grid-cols-4 gap-6 mb-8">
                       {/* Objective Column */}
-                      <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/50 flex items-center justify-between group-hover:shadow-xl transition-all duration-300">
+                      <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/50 flex items-center justify-between hover:shadow-xl transition-all duration-300">
                         <div 
                           className="flex items-center gap-4 flex-1 cursor-pointer"
                           onClick={() => setEditingObjective(objective)}
@@ -332,7 +414,7 @@ export function RoadmapBoard({
                           variant="ghost"
                           size="sm"
                           onClick={() => setEditingObjective(objective)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity rounded-xl"
+                          className="opacity-0 hover:opacity-100 transition-opacity rounded-xl"
                         >
                           <Edit3 className="h-4 w-4" />
                         </Button>
@@ -344,26 +426,34 @@ export function RoadmapBoard({
                         
                         return (
                           <div key={column.key} className="bg-white/40 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm hover:shadow-lg transition-all duration-300">
-                            <div className="flex items-center justify-between mb-6">
-                              <span className={cn("font-medium text-sm", column.textColor)}>
-                                {items.length} items
-                              </span>
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center gap-2">
+                                <div className={cn("w-3 h-3 rounded-full", `bg-gradient-to-r ${column.gradient}`)} />
+                                <h4 className={cn("font-medium text-sm", column.textColor)}>
+                                  {column.title}
+                                </h4>
+                              </div>
                               <Button
                                 variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 rounded-xl hover:bg-white/60"
-                                onClick={() => setIsCreatingItem(true)}
+                                size="sm"
+                                className="h-7 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                                onClick={() => {
+                                  setCreationContext({
+                                    objectiveId: objective.id,
+                                    status: column.key
+                                  })
+                                  setIsCreatingItem(true)
+                                }}
                               >
-                                <Plus className="h-4 w-4" />
+                                <Plus className="h-3 w-3 mr-1" />
+                                Add
                               </Button>
                             </div>
                             
                             {/* Multi-column card grid */}
                             <div className={cn(
-                              "grid gap-3",
-                              items.length <= 2 ? "grid-cols-1" : 
-                              items.length <= 4 ? "grid-cols-2" :
-                              "grid-cols-2"
+                              "grid gap-2",
+                              cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
                             )}>
                               {items.map((item) => (
                                 <RoadmapItem
@@ -372,8 +462,6 @@ export function RoadmapBoard({
                                   viewMode="edit"
                                   detailLevel={detailLevel}
                                   onEdit={() => setEditingItem(item)}
-                                  onDelete={onDeleteItem}
-                                  onComment={onCommentItem}
                                 />
                               ))}
                               
@@ -383,11 +471,17 @@ export function RoadmapBoard({
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      className="text-gray-500 hover:text-gray-700 rounded-xl hover:bg-white/40"
-                                      onClick={() => setIsCreatingItem(true)}
+                                      className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
+                                      onClick={() => {
+                                        setCreationContext({
+                                          objectiveId: objective.id,
+                                          status: column.key
+                                        })
+                                        setIsCreatingItem(true)
+                                      }}
                                     >
                                       <Plus className="h-4 w-4 mr-2" />
-                                      Add item
+                                      Add
                                     </Button>
                                   </div>
                                 </div>
@@ -399,7 +493,7 @@ export function RoadmapBoard({
                     </div>
                   ))}
               </div>
-            ) : (
+            ) : viewType === 'module' ? (
               /* Desktop Matrix Layout - Modules */
               <div className="hidden lg:block">
                 {/* Column Headers */}
@@ -419,9 +513,9 @@ export function RoadmapBoard({
 
                 {/* Matrix Grid - Modules */}
                 {getModulesWithItems().map((module) => (
-                  <div key={module.id} className="grid grid-cols-4 gap-6 group mb-8">
+                  <div key={module.id} className="grid grid-cols-4 gap-6 mb-8">
                     {/* Module Column */}
-                    <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/50 flex items-center justify-between group-hover:shadow-xl transition-all duration-300">
+                    <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/50 flex items-center justify-between hover:shadow-xl transition-all duration-300">
                       <div 
                         className="flex items-center gap-4 flex-1 cursor-pointer"
                         onClick={() => module.id !== 'unassigned' && setEditingModule(module)}
@@ -442,7 +536,7 @@ export function RoadmapBoard({
                           variant="ghost"
                           size="sm"
                           onClick={() => setEditingModule(module)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity rounded-xl"
+                          className="opacity-0 hover:opacity-100 transition-opacity rounded-xl"
                         >
                           <Edit3 className="h-4 w-4" />
                         </Button>
@@ -458,18 +552,34 @@ export function RoadmapBoard({
                       
                       return (
                         <div key={column.key} className="bg-white/40 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm hover:shadow-lg transition-all duration-300">
-                          <div className="flex items-center justify-between mb-6">
-                            <span className={cn("font-medium text-sm", column.textColor)}>
-                              {items.length} items
-                            </span>
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                              <div className={cn("w-3 h-3 rounded-full", `bg-gradient-to-r ${column.gradient}`)} />
+                              <h4 className={cn("font-medium text-sm", column.textColor)}>
+                                {column.title}
+                              </h4>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                              onClick={() => {
+                                setCreationContext({
+                                  moduleId: module.id === 'unassigned' ? undefined : module.id,
+                                  status: column.key
+                                })
+                                setIsCreatingItem(true)
+                              }}
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Add
+                            </Button>
                           </div>
                           
                           {/* Multi-column card grid */}
                           <div className={cn(
-                            "grid gap-3",
-                            items.length <= 2 ? "grid-cols-1" : 
-                            items.length <= 4 ? "grid-cols-2" :
-                            "grid-cols-2"
+                            "grid gap-2",
+                            cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
                           )}>
                             {items.map((item) => (
                               <RoadmapItem
@@ -478,14 +588,154 @@ export function RoadmapBoard({
                                 viewMode="edit"
                                 detailLevel={detailLevel}
                                 onEdit={() => setEditingItem(item)}
-                                onDelete={onDeleteItem}
-                                onComment={onCommentItem}
                               />
                             ))}
                             
                             {items.length === 0 && (
-                              <div className="col-span-full text-center py-8 text-gray-400 text-sm">
-                                No items
+                              <div className="col-span-full">
+                                <div className="text-center py-8">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
+                                    onClick={() => {
+                                      setCreationContext({
+                                        moduleId: module.id === 'unassigned' ? undefined : module.id,
+                                        status: column.key
+                                      })
+                                      setIsCreatingItem(true)
+                                    }}
+                                  >
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Add
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* Desktop Matrix Layout - Teams */
+              <div className="hidden lg:block">
+                {/* Column Headers */}
+                <div className="grid grid-cols-4 gap-6 mb-8">
+                  <div className="p-4"></div>
+                  {statusColumns.map((column) => (
+                    <div key={column.key} className="text-center">
+                      <div className={cn(
+                        "inline-flex items-center px-6 py-3 rounded-2xl text-white font-semibold text-lg shadow-lg",
+                        `bg-gradient-to-r ${column.gradient}`
+                      )}>
+                        {column.title}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Matrix Grid - Teams */}
+                {getTeamsWithItems().map((team) => (
+                  <div key={team.id} className="grid grid-cols-4 gap-6 mb-8">
+                    {/* Team Column */}
+                    <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/50 flex items-center justify-between hover:shadow-xl transition-all duration-300">
+                      <div 
+                        className="flex items-center gap-4 flex-1 cursor-pointer"
+                        onClick={() => team.id !== 'unassigned' && setEditingTeam(team)}
+                      >
+                        <div
+                          className="w-6 h-6 rounded-full shadow-sm border-2 border-white"
+                          style={{ backgroundColor: team.color }}
+                        />
+                        <div>
+                          <h3 className="font-semibold text-gray-900 text-lg">{team.title}</h3>
+                          {team.description && (
+                            <p className="text-sm text-gray-600 mt-1">{team.description}</p>
+                          )}
+                        </div>
+                      </div>
+                      {team.id !== 'unassigned' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingTeam(team)}
+                          className="opacity-0 hover:opacity-100 transition-opacity rounded-xl"
+                        >
+                          <Edit3 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Status Columns */}
+                    {statusColumns.map((column) => {
+                      const items = getItemsForTeamAndStatus(
+                        team.id === 'unassigned' ? null : team.id, 
+                        column.key
+                      )
+                      
+                      return (
+                        <div key={column.key} className="bg-white/40 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm hover:shadow-lg transition-all duration-300">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                              <div className={cn("w-3 h-3 rounded-full", `bg-gradient-to-r ${column.gradient}`)} />
+                              <h4 className={cn("font-medium text-sm", column.textColor)}>
+                                {column.title}
+                              </h4>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                              onClick={() => {
+                                setCreationContext({
+                                  teamId: team.id === 'unassigned' ? undefined : team.id,
+                                  status: column.key
+                                })
+                                setIsCreatingItem(true)
+                              }}
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Add
+                            </Button>
+                          </div>
+                          
+                          {/* Multi-column card grid */}
+                          <div className={cn(
+                            "grid gap-2",
+                            cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
+                          )}>
+                            {items.map((item) => (
+                              <RoadmapItem
+                                key={item.id}
+                                item={item}
+                                viewMode="edit"
+                                detailLevel={detailLevel}
+                                onEdit={() => setEditingItem(item)}
+                              />
+                            ))}
+                            
+                            {items.length === 0 && (
+                              <div className="col-span-full">
+                                <div className="text-center py-8">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
+                                    onClick={() => {
+                                      setCreationContext({
+                                        teamId: team.id === 'unassigned' ? undefined : team.id,
+                                        status: column.key
+                                      })
+                                      setIsCreatingItem(true)
+                                    }}
+                                  >
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Add
+                                  </Button>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -545,23 +795,30 @@ export function RoadmapBoard({
                                     `bg-gradient-to-r ${column.gradient}`
                                   )} />
                                   <h4 className={cn("font-semibold text-sm", column.textColor)}>
-                                    {column.title} ({items.length})
+                                    {column.title}
                                   </h4>
                                 </div>
                                 <Button
                                   variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 rounded-xl hover:bg-white/60"
-                                  onClick={() => setIsCreatingItem(true)}
+                                  size="sm"
+                                  className="h-8 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                                  onClick={() => {
+                                    setCreationContext({
+                                      objectiveId: objective.id,
+                                      status: column.key
+                                    })
+                                    setIsCreatingItem(true)
+                                  }}
                                 >
-                                  <Plus className="h-4 w-4" />
+                                  <Plus className="h-3 w-3 mr-1" />
+                                  Add
                                 </Button>
                               </div>
                               
                               {items.length > 0 ? (
                                 <div className={cn(
-                                  "grid gap-3",
-                                  items.length === 1 ? "grid-cols-1" : "grid-cols-2"
+                                  "grid gap-2",
+                                  cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
                                 )}>
                                   {items.map((item) => (
                                     <RoadmapItem
@@ -570,8 +827,6 @@ export function RoadmapBoard({
                                       viewMode="edit"
                                       detailLevel={detailLevel}
                                       onEdit={() => setEditingItem(item)}
-                                      onDelete={onDeleteItem}
-                                      onComment={onCommentItem}
                                     />
                                   ))}
                                 </div>
@@ -580,11 +835,17 @@ export function RoadmapBoard({
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="text-gray-500 hover:text-gray-700 rounded-xl hover:bg-white/40"
-                                    onClick={() => setIsCreatingItem(true)}
+                                    className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
+                                    onClick={() => {
+                                      setCreationContext({
+                                        objectiveId: objective.id,
+                                        status: column.key
+                                      })
+                                      setIsCreatingItem(true)
+                                    }}
                                   >
                                     <Plus className="h-4 w-4 mr-2" />
-                                    Add {column.title.toLowerCase()} item
+                                    Add
                                   </Button>
                                 </div>
                               )}
@@ -594,7 +855,7 @@ export function RoadmapBoard({
                       </div>
                     </div>
                   ))
-              ) : (
+              ) : viewType === 'module' ? (
                 getModulesWithItems().map((module) => (
                   <div key={module.id} className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/50 overflow-hidden">
                     {/* Module Header */}
@@ -648,15 +909,30 @@ export function RoadmapBoard({
                                   `bg-gradient-to-r ${column.gradient}`
                                 )} />
                                 <h4 className={cn("font-semibold text-sm", column.textColor)}>
-                                  {column.title} ({items.length})
+                                  {column.title}
                                 </h4>
                               </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                                onClick={() => {
+                                  setCreationContext({
+                                    moduleId: module.id === 'unassigned' ? undefined : module.id,
+                                    status: column.key
+                                  })
+                                  setIsCreatingItem(true)
+                                }}
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Add
+                              </Button>
                             </div>
                             
                             {items.length > 0 ? (
                               <div className={cn(
-                                "grid gap-3",
-                                items.length === 1 ? "grid-cols-1" : "grid-cols-2"
+                                "grid gap-2",
+                                cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
                               )}>
                                 {items.map((item) => (
                                   <RoadmapItem
@@ -665,13 +941,142 @@ export function RoadmapBoard({
                                     viewMode="edit"
                                     detailLevel={detailLevel}
                                     onEdit={() => setEditingItem(item)}
-                                    onDelete={onDeleteItem}
-                                    onComment={onCommentItem}
                                   />
                                 ))}
                               </div>
                             ) : (
-                              <p className="text-gray-400 text-center py-6 text-sm">No items</p>
+                              <div className="text-center py-6">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
+                                  onClick={() => {
+                                    setCreationContext({
+                                      moduleId: module.id === 'unassigned' ? undefined : module.id,
+                                      status: column.key
+                                    })
+                                    setIsCreatingItem(true)
+                                  }}
+                                >
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Add
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                /* Mobile Teams Layout */
+                getTeamsWithItems().map((team) => (
+                  <div key={team.id} className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/50 overflow-hidden">
+                    {/* Team Header */}
+                    <div className="p-6 border-b border-gray-200/50">
+                      <div className="flex items-center justify-between">
+                        <div 
+                          className="flex items-center gap-3 flex-1 cursor-pointer"
+                          onClick={() => team.id !== 'unassigned' && setEditingTeam(team)}
+                        >
+                          <div
+                            className="w-5 h-5 rounded-full shadow-sm border-2 border-white"
+                            style={{ backgroundColor: team.color }}
+                          />
+                          <div>
+                            <h3 className="font-semibold text-gray-900 text-lg">{team.title}</h3>
+                            {team.description && (
+                              <p className="text-sm text-gray-600">{team.description}</p>
+                            )}
+                          </div>
+                        </div>
+                        {team.id !== 'unassigned' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingTeam(team)}
+                            className="rounded-xl"
+                          >
+                            <Edit3 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Status Sections */}
+                    <div className="space-y-0">
+                      {statusColumns.map((column, index) => {
+                        const items = getItemsForTeamAndStatus(
+                          team.id === 'unassigned' ? null : team.id, 
+                          column.key
+                        )
+                        
+                        return (
+                          <div key={column.key} className={cn(
+                            "p-6",
+                            index !== statusColumns.length - 1 && "border-b border-gray-200/30"
+                          )}>
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center gap-3">
+                                <div className={cn(
+                                  "w-3 h-3 rounded-full",
+                                  `bg-gradient-to-r ${column.gradient}`
+                                )} />
+                                <h4 className={cn("font-semibold text-sm", column.textColor)}>
+                                  {column.title}
+                                </h4>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                                onClick={() => {
+                                  setCreationContext({
+                                    teamId: team.id === 'unassigned' ? undefined : team.id,
+                                    status: column.key
+                                  })
+                                  setIsCreatingItem(true)
+                                }}
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Add
+                              </Button>
+                            </div>
+                            
+                            {items.length > 0 ? (
+                              <div className={cn(
+                                "grid gap-2",
+                                cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
+                              )}>
+                                {items.map((item) => (
+                                  <RoadmapItem
+                                    key={item.id}
+                                    item={item}
+                                    viewMode="edit"
+                                    detailLevel={detailLevel}
+                                    onEdit={() => setEditingItem(item)}
+                                  />
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-center py-6">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
+                                  onClick={() => {
+                                    setCreationContext({
+                                      teamId: team.id === 'unassigned' ? undefined : team.id,
+                                      status: column.key
+                                    })
+                                    setIsCreatingItem(true)
+                                  }}
+                                >
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Add
+                                </Button>
+                              </div>
                             )}
                           </div>
                         )
@@ -691,12 +1096,16 @@ export function RoadmapBoard({
         onClose={() => setShowSettingsModal(false)}
         objectives={roadmap.objectives}
         modules={roadmap.modules}
+        teams={roadmap.teams}
         onAddObjective={onAddObjective!}
         onUpdateObjective={onUpdateObjective!}
         onDeleteObjective={onDeleteObjective!}
         onAddModule={onAddModule!}
         onUpdateModule={onUpdateModule!}
         onDeleteModule={onDeleteModule!}
+        onAddTeam={onAddTeam!}
+        onUpdateTeam={onUpdateTeam!}
+        onDeleteTeam={onDeleteTeam!}
       />
 
       {/* Module Edit Modal */}
@@ -706,6 +1115,7 @@ export function RoadmapBoard({
           onClose={() => setEditingModule(null)}
           objectives={roadmap.objectives}
           modules={roadmap.modules}
+          teams={roadmap.teams}
           initialTab="modules"
           initialEditingModule={editingModule}
           onAddObjective={onAddObjective!}
@@ -714,6 +1124,9 @@ export function RoadmapBoard({
           onAddModule={onAddModule!}
           onUpdateModule={onUpdateModule!}
           onDeleteModule={onDeleteModule!}
+          onAddTeam={onAddTeam!}
+          onUpdateTeam={onUpdateTeam!}
+          onDeleteTeam={onDeleteTeam!}
         />
       )}
 
@@ -724,6 +1137,7 @@ export function RoadmapBoard({
           onClose={() => setEditingObjective(null)}
           objectives={roadmap.objectives}
           modules={roadmap.modules}
+          teams={roadmap.teams}
           initialTab="objectives"
           initialEditingObjective={editingObjective}
           onAddObjective={onAddObjective!}
@@ -732,6 +1146,31 @@ export function RoadmapBoard({
           onAddModule={onAddModule!}
           onUpdateModule={onUpdateModule!}
           onDeleteModule={onDeleteModule!}
+          onAddTeam={onAddTeam!}
+          onUpdateTeam={onUpdateTeam!}
+          onDeleteTeam={onDeleteTeam!}
+        />
+      )}
+
+      {/* Team Edit Modal */}
+      {editingTeam && (
+        <SettingsModal
+          isOpen={true}
+          onClose={() => setEditingTeam(null)}
+          objectives={roadmap.objectives}
+          modules={roadmap.modules}
+          teams={roadmap.teams}
+          initialTab="teams"
+          initialEditingTeam={editingTeam}
+          onAddObjective={onAddObjective!}
+          onUpdateObjective={onUpdateObjective!}
+          onDeleteObjective={onDeleteObjective!}
+          onAddModule={onAddModule!}
+          onUpdateModule={onUpdateModule!}
+          onDeleteModule={onDeleteModule!}
+          onAddTeam={onAddTeam!}
+          onUpdateTeam={onUpdateTeam!}
+          onDeleteTeam={onDeleteTeam!}
         />
       )}
 
@@ -741,14 +1180,23 @@ export function RoadmapBoard({
         onClose={() => {
           setEditingItem(null)
           setIsCreatingItem(false)
+          setCreationContext(null)
         }}
         item={editingItem}
         objectives={roadmap.objectives}
         modules={roadmap.modules}
+        teams={roadmap.teams}
         onSave={async (updates) => {
           await onSaveItem?.(editingItem, updates)
         }}
+        onDelete={onDeleteItem ? async (item) => {
+          onDeleteItem(item)
+        } : undefined}
         onCreateObjective={onCreateObjective}
+        defaultObjectiveId={creationContext?.objectiveId}
+        defaultModuleId={creationContext?.moduleId}
+        defaultTeamId={creationContext?.teamId}
+        defaultStatus={creationContext?.status}
       />
     </div>
   )

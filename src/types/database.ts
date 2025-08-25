@@ -102,12 +102,45 @@ export interface Database {
           updated_at?: string
         }
       }
+      teams: {
+        Row: {
+          id: string
+          roadmap_id: string
+          title: string
+          color: string
+          description: string | null
+          order_index: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          roadmap_id: string
+          title: string
+          color?: string
+          description?: string | null
+          order_index: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          roadmap_id?: string
+          title?: string
+          color?: string
+          description?: string | null
+          order_index?: number
+          created_at?: string
+          updated_at?: string
+        }
+      }
       roadmap_items: {
         Row: {
           id: string
           roadmap_id: string
           objective_id: string | null
           module_id: string | null
+          team_id: string | null
           title: string
           description: string | null
           category: 'tech' | 'business' | 'mixed'
@@ -122,6 +155,7 @@ export interface Database {
           roadmap_id: string
           objective_id?: string | null
           module_id?: string | null
+          team_id?: string | null
           title: string
           description?: string | null
           category?: 'tech' | 'business' | 'mixed'
@@ -136,6 +170,7 @@ export interface Database {
           roadmap_id?: string
           objective_id?: string | null
           module_id?: string | null
+          team_id?: string | null
           title?: string
           description?: string | null
           category?: 'tech' | 'business' | 'mixed'

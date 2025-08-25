@@ -5,7 +5,7 @@ import { Modal } from './ui/Modal'
 import { Button } from './ui/Button'
 import { Input } from './ui/Input'
 import { Plus, Edit3, Trash2 } from 'lucide-react'
-import { Objective, Module, NewObjective, NewModule } from '@/types'
+import { Objective, Module, Team, NewObjective, NewModule, NewTeam } from '@/types'
 import { cn } from '@/lib/utils'
 
 interface SettingsModalProps {
@@ -13,19 +13,24 @@ interface SettingsModalProps {
   onClose: () => void
   objectives: Objective[]
   modules: Module[]
+  teams: Team[]
   onAddObjective: (objective: NewObjective) => Promise<void>
   onUpdateObjective: (id: string, updates: Partial<Objective>) => Promise<void>
   onDeleteObjective: (id: string) => Promise<void>
   onAddModule: (module: NewModule) => Promise<void>
   onUpdateModule: (id: string, updates: Partial<Module>) => Promise<void>
   onDeleteModule: (id: string) => Promise<void>
-  initialTab?: 'objectives' | 'modules'
+  onAddTeam: (team: NewTeam) => Promise<void>
+  onUpdateTeam: (id: string, updates: Partial<Team>) => Promise<void>
+  onDeleteTeam: (id: string) => Promise<void>
+  initialTab?: 'objectives' | 'modules' | 'teams'
   initialEditingModule?: Module
   initialEditingObjective?: Objective
+  initialEditingTeam?: Team
 }
 
 type EditingItem = {
-  type: 'objective' | 'module'
+  type: 'objective' | 'module' | 'team'
   id: string
   title: string
   color: string
@@ -43,17 +48,22 @@ export function SettingsModal({
   onClose,
   objectives,
   modules,
+  teams,
   onAddObjective,
   onUpdateObjective,
   onDeleteObjective,
   onAddModule,
   onUpdateModule,
   onDeleteModule,
+  onAddTeam,
+  onUpdateTeam,
+  onDeleteTeam,
   initialTab = 'objectives',
   initialEditingModule,
-  initialEditingObjective
+  initialEditingObjective,
+  initialEditingTeam
 }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<'objectives' | 'modules'>(initialTab)
+  const [activeTab, setActiveTab] = useState<'objectives' | 'modules' | 'teams'>(initialTab)
   const [editing, setEditing] = useState<EditingItem>(null)
   const [newItemTitle, setNewItemTitle] = useState('')
   const [newItemColor, setNewItemColor] = useState(DEFAULT_COLORS[0])
@@ -78,8 +88,17 @@ export function SettingsModal({
         description: undefined
       })
       setActiveTab('objectives')
+    } else if (initialEditingTeam) {
+      setEditing({
+        type: 'team',
+        id: initialEditingTeam.id,
+        title: initialEditingTeam.title,
+        color: initialEditingTeam.color,
+        description: initialEditingTeam.description || undefined
+      })
+      setActiveTab('teams')
     }
-  }, [initialEditingModule, initialEditingObjective])
+  }, [initialEditingModule, initialEditingObjective, initialEditingTeam])
 
   const handleAddItem = async () => {
     if (!newItemTitle.trim()) return
@@ -92,13 +111,21 @@ export function SettingsModal({
           order_index: objectives.length,
           roadmap_id: objectives[0]?.roadmap_id || ''
         })
-      } else {
+      } else if (activeTab === 'modules') {
         await onAddModule({
           title: newItemTitle.trim(),
           color: newItemColor,
           description: newItemDescription.trim() || null,
           order_index: modules.length,
           roadmap_id: modules[0]?.roadmap_id || ''
+        })
+      } else {
+        await onAddTeam({
+          title: newItemTitle.trim(),
+          color: newItemColor,
+          description: newItemDescription.trim() || null,
+          order_index: teams?.length || 0,
+          roadmap_id: teams[0]?.roadmap_id || objectives[0]?.roadmap_id || modules[0]?.roadmap_id || ''
         })
       }
       
@@ -110,9 +137,9 @@ export function SettingsModal({
     }
   }
 
-  const handleEditItem = (item: Objective | Module) => {
+  const handleEditItem = (item: Objective | Module | Team) => {
     setEditing({
-      type: activeTab.slice(0, -1) as 'objective' | 'module',
+      type: activeTab.slice(0, -1) as 'objective' | 'module' | 'team',
       id: item.id,
       title: item.title,
       color: item.color,
@@ -129,8 +156,14 @@ export function SettingsModal({
           title: editing.title,
           color: editing.color
         })
-      } else {
+      } else if (editing.type === 'module') {
         await onUpdateModule(editing.id, {
+          title: editing.title,
+          color: editing.color,
+          description: editing.description || null
+        })
+      } else {
+        await onUpdateTeam(editing.id, {
           title: editing.title,
           color: editing.color,
           description: editing.description || null
@@ -150,15 +183,17 @@ export function SettingsModal({
     try {
       if (activeTab === 'objectives') {
         await onDeleteObjective(id)
-      } else {
+      } else if (activeTab === 'modules') {
         await onDeleteModule(id)
+      } else {
+        await onDeleteTeam(id)
       }
     } catch (error) {
       console.error(`Failed to delete ${activeTab.slice(0, -1)}:`, error)
     }
   }
 
-  const renderItems = (items: (Objective | Module)[]) => (
+  const renderItems = (items: (Objective | Module | Team)[]) => (
     <div className="space-y-3">
       {items.map((item) => (
         <div key={item.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
@@ -227,20 +262,31 @@ export function SettingsModal({
           >
             Modules ({modules.length})
           </button>
+          <button
+            onClick={() => setActiveTab('teams')}
+            className={cn(
+              "flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors",
+              activeTab === 'teams'
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            Teams ({teams?.length || 0})
+          </button>
         </div>
 
         {/* Add New Item */}
         <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
           <h3 className="font-medium text-gray-900 mb-3">
-            Add New {activeTab === 'objectives' ? 'Objective' : 'Module'}
+            Add New {activeTab === 'objectives' ? 'Objective' : activeTab === 'modules' ? 'Module' : 'Team'}
           </h3>
           <div className="space-y-3">
             <Input
-              placeholder={`${activeTab === 'objectives' ? 'Objective' : 'Module'} title`}
+              placeholder={`${activeTab === 'objectives' ? 'Objective' : activeTab === 'modules' ? 'Module' : 'Team'} title`}
               value={newItemTitle}
               onChange={(e) => setNewItemTitle(e.target.value)}
             />
-            {activeTab === 'modules' && (
+            {(activeTab === 'modules' || activeTab === 'teams') && (
               <Input
                 placeholder="Description (optional)"
                 value={newItemDescription}
@@ -269,7 +315,7 @@ export function SettingsModal({
               className="w-full"
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add {activeTab === 'objectives' ? 'Objective' : 'Module'}
+              Add {activeTab === 'objectives' ? 'Objective' : activeTab === 'modules' ? 'Module' : 'Team'}
             </Button>
           </div>
         </div>
@@ -277,7 +323,7 @@ export function SettingsModal({
         {/* Items List */}
         <div className="space-y-4">
           <h3 className="font-medium text-gray-900">
-            Existing {activeTab === 'objectives' ? 'Objectives' : 'Modules'}
+            Existing {activeTab === 'objectives' ? 'Objectives' : activeTab === 'modules' ? 'Modules' : 'Teams'}
           </h3>
           {activeTab === 'objectives' ? (
             objectives.length > 0 ? (
@@ -285,11 +331,17 @@ export function SettingsModal({
             ) : (
               <p className="text-gray-500 text-center py-8">No objectives yet</p>
             )
-          ) : (
+          ) : activeTab === 'modules' ? (
             modules.length > 0 ? (
               renderItems(modules)
             ) : (
               <p className="text-gray-500 text-center py-8">No modules yet</p>
+            )
+          ) : (
+            (teams?.length || 0) > 0 ? (
+              renderItems(teams)
+            ) : (
+              <p className="text-gray-500 text-center py-8">No teams yet</p>
             )
           )}
         </div>
@@ -300,7 +352,7 @@ export function SettingsModal({
         <div className="absolute inset-0 bg-white">
           <div className="p-6 border-b border-gray-200">
             <h3 className="text-lg font-semibold">
-              Edit {editing.type === 'objective' ? 'Objective' : 'Module'}
+              Edit {editing.type === 'objective' ? 'Objective' : editing.type === 'module' ? 'Module' : 'Team'}
             </h3>
           </div>
           <div className="p-6 space-y-4">
@@ -313,7 +365,7 @@ export function SettingsModal({
                 onChange={(e) => setEditing({ ...editing, title: e.target.value })}
               />
             </div>
-            {editing.type === 'module' && (
+            {(editing.type === 'module' || editing.type === 'team') && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Description
