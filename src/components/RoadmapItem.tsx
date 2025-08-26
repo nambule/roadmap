@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { RoadmapItem as RoadmapItemType, ItemCategory, ViewMode, DetailLevel } from '@/types'
 import { Card, CardContent, CardHeader } from './ui/Card'
 import { Button } from './ui/Button'
-import { MessageSquare, Tag, Trash2, Edit3 } from 'lucide-react'
+import { Tag } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface RoadmapItemProps {
@@ -12,8 +12,6 @@ interface RoadmapItemProps {
   viewMode: ViewMode
   detailLevel: DetailLevel
   onEdit?: (item: RoadmapItemType) => void
-  onDelete?: (item: RoadmapItemType) => void
-  onComment?: (item: RoadmapItemType) => void
   isDragging?: boolean
 }
 
@@ -43,12 +41,9 @@ export function RoadmapItem({
   viewMode, 
   detailLevel,
   onEdit, 
-  onDelete, 
-  onComment,
   isDragging = false
 }: RoadmapItemProps) {
   const [showDescription, setShowDescription] = useState(detailLevel === 'full')
-  const [isHovered, setIsHovered] = useState(false)
 
   const canEdit = viewMode === 'edit'
   const isCompact = detailLevel === 'compact'
@@ -58,13 +53,12 @@ export function RoadmapItem({
   return (
     <Card 
       className={cn(
-        'group relative overflow-hidden transition-all duration-300 border-0 shadow-sm hover:shadow-xl bg-white/90 backdrop-blur-sm',
+        'group relative overflow-hidden transition-all duration-300 border-0 shadow-sm hover:shadow-xl bg-white/90 backdrop-blur-sm cursor-pointer',
         isDragging && 'opacity-50 rotate-2 shadow-lg scale-95',
-        isCompact ? 'p-2' : 'p-3',
+        isCompact ? 'p-1.5' : 'p-2',
         'hover:scale-[1.01] hover:-translate-y-0.5'
       )}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onClick={() => onEdit?.(item)}
     >
       {/* Gradient border effect */}
       <div className={cn(
@@ -76,49 +70,26 @@ export function RoadmapItem({
       
       <div className="relative z-10">
         {!isCompact && (
-          <CardHeader className="p-0 pb-2">
-            <div className="flex items-start justify-between">
-              <h4 className="font-semibold text-gray-800 text-sm leading-tight pr-2 line-clamp-2">
+          <CardHeader className="p-0 pb-1.5">
+            <div className="flex items-start">
+              <h4 className="font-semibold text-gray-800 text-sm leading-tight w-full line-clamp-3">
                 {item.title}
               </h4>
-              {canEdit && (
-                <div className={cn(
-                  'flex gap-1 transition-all duration-200',
-                  isHovered ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-2'
-                )}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 rounded-lg hover:bg-gray-100"
-                    onClick={() => onEdit?.(item)}
-                  >
-                    <Edit3 className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 rounded-lg hover:bg-red-50 text-red-500 hover:text-red-600"
-                    onClick={() => onDelete?.(item)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              )}
             </div>
           </CardHeader>
         )}
         
         <CardContent className="p-0">
           {isCompact && (
-            <h4 className="font-semibold text-gray-800 text-xs mb-2 leading-tight line-clamp-2">
+            <h4 className="font-semibold text-gray-800 text-sm mb-1.5 leading-tight line-clamp-2 w-full">
               {item.title}
             </h4>
           )}
           
           {!isCompact && item.description && (
-            <div className="mb-3">
+            <div className="mb-2">
               {isFull || showDescription ? (
-                <p className="text-xs text-gray-600 leading-relaxed line-clamp-3">
+                <p className="text-xs text-gray-600 leading-snug line-clamp-2">
                   {item.description}
                 </p>
               ) : (
@@ -132,10 +103,10 @@ export function RoadmapItem({
             </div>
           )}
           
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center">
+            <div className="flex items-center gap-1 flex-wrap">
               <span className={cn(
-                'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border',
+                'inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium border',
                 categoryStyle.bg,
                 categoryStyle.text,
                 categoryStyle.border
@@ -144,40 +115,26 @@ export function RoadmapItem({
               </span>
               
               {item.tags.length > 0 && !isCompact && (
-                <div className="flex items-center gap-1">
-                  <Tag className="h-3 w-3 text-gray-400" />
-                  <div className="flex gap-1">
-                    {item.tags.slice(0, 1).map((tag, index) => (
+                <div className="flex items-center gap-0.5">
+                  <Tag className="h-2.5 w-2.5 text-gray-400" />
+                  <div className="flex gap-0.5">
+                    {item.tags.slice(0, 2).map((tag, index) => (
                       <span
                         key={index}
-                        className="text-xs text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded font-medium"
+                        className="text-xs text-gray-600 bg-gray-100 px-1 py-0.5 rounded font-medium"
                       >
                         {tag}
                       </span>
                     ))}
-                    {item.tags.length > 1 && (
-                      <span className="text-xs text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
-                        +{item.tags.length - 1}
+                    {item.tags.length > 2 && (
+                      <span className="text-xs text-gray-500 bg-gray-50 px-1 py-0.5 rounded">
+                        +{item.tags.length - 2}
                       </span>
                     )}
                   </div>
                 </div>
               )}
             </div>
-            
-            {!isCompact && canEdit && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  'h-7 w-7 rounded-lg transition-all duration-200 hover:bg-gray-100',
-                  isHovered ? 'opacity-100' : 'opacity-0'
-                )}
-                onClick={() => onComment?.(item)}
-              >
-                <MessageSquare className="h-3.5 w-3.5" />
-              </Button>
-            )}
           </div>
         </CardContent>
       </div>

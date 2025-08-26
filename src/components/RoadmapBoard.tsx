@@ -1,6 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, closestCenter, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core'
+import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { RoadmapWithData, ViewMode, DetailLevel, ViewType, CardLayout, RoadmapItem as RoadmapItemType, Objective, Module, Team, RoadmapStatus, NewObjective, NewModule, NewTeam } from '@/types'
 import { RoadmapItem } from './RoadmapItem'
 import { SettingsModal } from './SettingsModal'
@@ -49,6 +52,95 @@ interface RoadmapBoardProps {
   onUpdateRoadmap?: (updates: Partial<RoadmapWithData>) => Promise<void>
   onDeleteRoadmap?: () => Promise<void>
   onNavigateHome?: () => void
+}
+
+// Enhanced draggable wrapper for roadmap items with better visual feedback
+function DraggableRoadmapItem({ 
+  item, 
+  onEdit,
+  isRecentlyMoved = false
+}: { 
+  item: RoadmapItemType
+  onEdit: () => void
+  isRecentlyMoved?: boolean
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ 
+    id: item.id,
+    transition: {
+      duration: 200,
+      easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+    },
+  })
+
+  const dragStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition: (isDragging || isRecentlyMoved) ? 'none' : transition, // Disable transition during drag and after drop
+    cursor: isDragging ? 'grabbing' : 'grab'
+  }
+
+  return (
+    <div 
+      ref={setNodeRef} 
+      style={dragStyle} 
+      {...attributes} 
+      {...listeners}
+      className={`touch-none select-none ${
+        isDragging 
+          ? 'opacity-30 scale-95 shadow-lg z-50' 
+          : 'hover:scale-[1.02] hover:shadow-md transition-all duration-200'
+      }`}
+    >
+      <RoadmapItem
+        item={item}
+        viewMode="edit"
+        detailLevel="full"
+        onEdit={onEdit}
+        isDragging={isDragging}
+      />
+    </div>
+  )
+}
+
+// Enhanced droppable wrapper for status columns with better visual feedback
+function DroppableColumn({ 
+  id, 
+  children, 
+  className 
+}: { 
+  id: string
+  children: React.ReactNode
+  className?: string 
+}) {
+  const { isOver, setNodeRef } = useDroppable({ id })
+  
+  return (
+    <div 
+      ref={setNodeRef}
+      className={`${className} transition-all duration-200 ${
+        isOver 
+          ? 'ring-4 ring-blue-400 ring-opacity-60 bg-blue-50/40 scale-[1.02] shadow-lg border-blue-300' 
+          : 'hover:shadow-lg'
+      }`}
+    >
+      {children}
+      {isOver && (
+        <div className="absolute inset-0 bg-blue-100/20 rounded-2xl pointer-events-none">
+          <div className="flex items-center justify-center h-full">
+            <div className="bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium shadow-lg">
+              Drop here
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 const statusColumns: { key: RoadmapStatus; title: string; gradient: string; textColor: string }[] = [
@@ -116,25 +208,57 @@ export function RoadmapBoard({
   } | null>(null)
   
   const canEdit = true // Always in edit mode now
+  
+  // Drag and drop setup
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [draggedItem, setDraggedItem] = useState<RoadmapItemType | null>(null)
+  const [recentlyMovedItems, setRecentlyMovedItems] = useState<Set<string>>(new Set())
+  const [optimisticUpdates, setOptimisticUpdates] = useState<Map<string, Partial<RoadmapItemType>>>(new Map())
+  
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  )
+
+  // Create an optimistically updated version of the roadmap
+  const getOptimisticRoadmap = () => {
+    if (optimisticUpdates.size === 0) return roadmap
+    
+    const updatedObjectives = roadmap.objectives.map(objective => ({
+      ...objective,
+      items: objective.items.map(item => {
+        const optimisticUpdate = optimisticUpdates.get(item.id)
+        return optimisticUpdate ? { ...item, ...optimisticUpdate } : item
+      })
+    }))
+    
+    return {
+      ...roadmap,
+      objectives: updatedObjectives
+    }
+  }
+  
+  const optimisticRoadmap = getOptimisticRoadmap()
 
   const getItemsForObjectiveAndStatus = (objectiveId: string, status: RoadmapStatus) => {
-    const objective = roadmap.objectives.find(obj => obj.id === objectiveId)
+    const objective = optimisticRoadmap.objectives.find(obj => obj.id === objectiveId)
     if (!objective) return []
     return objective.items.filter(item => item.status === status)
       .sort((a, b) => a.order_index - b.order_index)
   }
 
   const getItemsForModuleAndStatus = (moduleId: string | null, status: RoadmapStatus) => {
-    const allItems = roadmap.objectives.flatMap(obj => obj.items)
+    const allItems = optimisticRoadmap.objectives.flatMap(obj => obj.items)
     return allItems.filter(item => item.module_id === moduleId && item.status === status)
       .sort((a, b) => a.order_index - b.order_index)
   }
 
   const getModulesWithItems = () => {
-    const modulesWithItems = [...roadmap.modules].sort((a, b) => a.order_index - b.order_index)
+    const modulesWithItems = [...optimisticRoadmap.modules].sort((a, b) => a.order_index - b.order_index)
     
     // Check if there are items without module assignments
-    const allItems = roadmap.objectives.flatMap(obj => obj.items)
+    const allItems = optimisticRoadmap.objectives.flatMap(obj => obj.items)
     const unassignedItems = allItems.filter(item => !item.module_id)
     
     if (unassignedItems.length > 0) {
@@ -144,7 +268,7 @@ export function RoadmapBoard({
         color: '#94a3b8',
         description: 'Items not assigned to any module',
         order_index: 999,
-        roadmap_id: roadmap.id,
+        roadmap_id: optimisticRoadmap.id,
         created_at: '',
         updated_at: ''
       } as Module)
@@ -154,13 +278,13 @@ export function RoadmapBoard({
   }
 
   const getItemsForTeamAndStatus = (teamId: string | null, status: RoadmapStatus) => {
-    const allItems = roadmap.objectives.flatMap(obj => obj.items)
+    const allItems = optimisticRoadmap.objectives.flatMap(obj => obj.items)
     return allItems.filter(item => item.team_id === teamId && item.status === status)
       .sort((a, b) => a.order_index - b.order_index)
   }
 
   const getTeamsWithItems = () => {
-    const teamsWithItems = [...roadmap.teams].sort((a, b) => a.order_index - b.order_index)
+    const teamsWithItems = [...optimisticRoadmap.teams].sort((a, b) => a.order_index - b.order_index)
     
     // Check if there are items without team assignments
     const allItems = roadmap.objectives.flatMap(obj => obj.items)
@@ -173,7 +297,7 @@ export function RoadmapBoard({
         color: '#94a3b8',
         description: 'Items not assigned to any team',
         order_index: 999,
-        roadmap_id: roadmap.id,
+        roadmap_id: optimisticRoadmap.id,
         created_at: '',
         updated_at: ''
       } as Team)
@@ -182,8 +306,76 @@ export function RoadmapBoard({
     return teamsWithItems
   }
 
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event
+    setActiveId(active.id as string)
+    
+    // Find the dragged item for the overlay
+    const allItems = optimisticRoadmap.objectives.flatMap(obj => obj.items)
+    const item = allItems.find(item => item.id === active.id)
+    setDraggedItem(item || null)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    
+    const draggedItemId = active.id as string
+    
+    // Clean up drag state immediately to prevent snap-back animation
+    setActiveId(null)
+    setDraggedItem(null)
+    
+    if (!over) return
+    
+    const overId = over.id as string
+    
+    // Parse the drop zone ID (format: objectiveId-status or moduleId-status or teamId-status)
+    const match = overId.match(/^(.+)-(now|next|later)$/)
+    if (!match) return
+    
+    const newStatus = match[2] as RoadmapStatus
+    
+    // Find the dragged item
+    const allItems = optimisticRoadmap.objectives.flatMap(obj => obj.items)
+    const draggedItem = allItems.find(item => item.id === draggedItemId)
+    
+    if (draggedItem && draggedItem.status !== newStatus) {
+      // Immediately update the optimistic state for instant UI feedback
+      setOptimisticUpdates(prev => {
+        const newMap = new Map(prev)
+        newMap.set(draggedItemId, { status: newStatus })
+        return newMap
+      })
+      
+      // Update the item status in the database
+      onSaveItem?.(draggedItem, { status: newStatus })
+        .then(() => {
+          // Remove optimistic update once database update is complete
+          setOptimisticUpdates(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(draggedItemId)
+            return newMap
+          })
+        })
+        .catch(() => {
+          // Revert optimistic update if database update fails
+          setOptimisticUpdates(prev => {
+            const newMap = new Map(prev)
+            newMap.delete(draggedItemId)
+            return newMap
+          })
+        })
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+    <DndContext 
+      sensors={sensors} 
+      collisionDetection={closestCenter} 
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-lg border-b border-white/20 shadow-sm">
         <div className="max-w-[95rem] mx-auto px-4 sm:px-6 lg:px-8">
@@ -356,7 +548,7 @@ export function RoadmapBoard({
 
       {/* Main Content */}
       <div className="max-w-[95rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {roadmap.objectives.length === 0 ? (
+        {optimisticRoadmap.objectives.length === 0 ? (
           <Card className="text-center py-16 bg-white/70 backdrop-blur-sm border-0 shadow-xl">
             <CardHeader>
               <CardTitle className="text-2xl">No objectives yet</CardTitle>
@@ -392,7 +584,7 @@ export function RoadmapBoard({
                 </div>
 
                 {/* Matrix Grid */}
-                {roadmap.objectives
+                {optimisticRoadmap.objectives
                   .sort((a, b) => a.order_index - b.order_index)
                   .map((objective) => (
                     <div key={objective.id} className="grid grid-cols-4 gap-6 mb-8">
@@ -425,7 +617,11 @@ export function RoadmapBoard({
                         const items = getItemsForObjectiveAndStatus(objective.id, column.key)
                         
                         return (
-                          <div key={column.key} className="bg-white/40 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm hover:shadow-lg transition-all duration-300">
+                          <DroppableColumn
+                            key={column.key}
+                            id={`${objective.id}-${column.key}`}
+                            className="bg-white/40 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm hover:shadow-lg transition-all duration-300"
+                          >
                             <div className="flex items-center justify-between mb-4">
                               <div className="flex items-center gap-2">
                                 <div className={cn("w-3 h-3 rounded-full", `bg-gradient-to-r ${column.gradient}`)} />
@@ -451,43 +647,44 @@ export function RoadmapBoard({
                             </div>
                             
                             {/* Multi-column card grid */}
-                            <div className={cn(
-                              "grid gap-2",
-                              cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
-                            )}>
-                              {items.map((item) => (
-                                <RoadmapItem
-                                  key={item.id}
-                                  item={item}
-                                  viewMode="edit"
-                                  detailLevel={detailLevel}
-                                  onEdit={() => setEditingItem(item)}
-                                />
-                              ))}
-                              
-                              {items.length === 0 && (
-                                <div className="col-span-full">
-                                  <div className="text-center py-8">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
-                                      onClick={() => {
-                                        setCreationContext({
-                                          objectiveId: objective.id,
-                                          status: column.key
-                                        })
-                                        setIsCreatingItem(true)
-                                      }}
-                                    >
-                                      <Plus className="h-4 w-4 mr-2" />
-                                      Add
-                                    </Button>
+                            <SortableContext items={items.map(item => item.id)} strategy={verticalListSortingStrategy}>
+                              <div className={cn(
+                                "grid gap-2",
+                                cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
+                              )}>
+                                {items.map((item) => (
+                                  <DraggableRoadmapItem
+                                    key={item.id}
+                                    item={item}
+                                    onEdit={() => setEditingItem(item)}
+                                    isRecentlyMoved={recentlyMovedItems.has(item.id)}
+                                  />
+                                ))}
+                                
+                                {items.length === 0 && (
+                                  <div className="col-span-full">
+                                    <div className="text-center py-8">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
+                                        onClick={() => {
+                                          setCreationContext({
+                                            objectiveId: objective.id,
+                                            status: column.key
+                                          })
+                                          setIsCreatingItem(true)
+                                        }}
+                                      >
+                                        <Plus className="h-4 w-4 mr-2" />
+                                        Add
+                                      </Button>
+                                    </div>
                                   </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
+                                )}
+                              </div>
+                            </SortableContext>
+                          </DroppableColumn>
                         )
                       })}
                     </div>
@@ -750,7 +947,7 @@ export function RoadmapBoard({
             {/* Mobile Card Layout */}
             <div className="lg:hidden space-y-8">
               {viewType === 'objective' ? (
-                roadmap.objectives
+                optimisticRoadmap.objectives
                   .sort((a, b) => a.order_index - b.order_index)
                   .map((objective) => (
                     <div key={objective.id} className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/50 overflow-hidden">
@@ -1094,9 +1291,9 @@ export function RoadmapBoard({
       <SettingsModal
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
-        objectives={roadmap.objectives}
-        modules={roadmap.modules}
-        teams={roadmap.teams}
+        objectives={optimisticRoadmap.objectives}
+        modules={optimisticRoadmap.modules}
+        teams={optimisticRoadmap.teams}
         onAddObjective={onAddObjective!}
         onUpdateObjective={onUpdateObjective!}
         onDeleteObjective={onDeleteObjective!}
@@ -1113,9 +1310,9 @@ export function RoadmapBoard({
         <SettingsModal
           isOpen={true}
           onClose={() => setEditingModule(null)}
-          objectives={roadmap.objectives}
-          modules={roadmap.modules}
-          teams={roadmap.teams}
+          objectives={optimisticRoadmap.objectives}
+          modules={optimisticRoadmap.modules}
+          teams={optimisticRoadmap.teams}
           initialTab="modules"
           initialEditingModule={editingModule}
           onAddObjective={onAddObjective!}
@@ -1135,9 +1332,9 @@ export function RoadmapBoard({
         <SettingsModal
           isOpen={true}
           onClose={() => setEditingObjective(null)}
-          objectives={roadmap.objectives}
-          modules={roadmap.modules}
-          teams={roadmap.teams}
+          objectives={optimisticRoadmap.objectives}
+          modules={optimisticRoadmap.modules}
+          teams={optimisticRoadmap.teams}
           initialTab="objectives"
           initialEditingObjective={editingObjective}
           onAddObjective={onAddObjective!}
@@ -1157,9 +1354,9 @@ export function RoadmapBoard({
         <SettingsModal
           isOpen={true}
           onClose={() => setEditingTeam(null)}
-          objectives={roadmap.objectives}
-          modules={roadmap.modules}
-          teams={roadmap.teams}
+          objectives={optimisticRoadmap.objectives}
+          modules={optimisticRoadmap.modules}
+          teams={optimisticRoadmap.teams}
           initialTab="teams"
           initialEditingTeam={editingTeam}
           onAddObjective={onAddObjective!}
@@ -1198,6 +1395,22 @@ export function RoadmapBoard({
         defaultTeamId={creationContext?.teamId}
         defaultStatus={creationContext?.status}
       />
-    </div>
+      
+      {/* Drag Overlay - shows the dragged item while dragging */}
+      <DragOverlay>
+        {draggedItem ? (
+          <div className="transform rotate-3 scale-105 shadow-2xl opacity-90">
+            <RoadmapItem
+              item={draggedItem}
+              viewMode="edit"
+              detailLevel="full"
+              onEdit={() => {}}
+              isDragging={true}
+            />
+          </div>
+        ) : null}
+      </DragOverlay>
+      </div>
+    </DndContext>
   )
 }
