@@ -22,6 +22,7 @@ interface ItemEditModalProps {
   defaultModuleId?: string | null
   defaultTeamId?: string | null
   defaultStatus?: RoadmapStatus
+  readOnly?: boolean
 }
 
 const STATUS_OPTIONS: { value: RoadmapStatus; label: string; color: string }[] = [
@@ -49,7 +50,8 @@ export function ItemEditModal({
   defaultObjectiveId,
   defaultModuleId,
   defaultTeamId,
-  defaultStatus
+  defaultStatus,
+  readOnly = false
 }: ItemEditModalProps) {
   const [formData, setFormData] = useState({
     title: '',
@@ -171,7 +173,7 @@ export function ItemEditModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={item ? 'Edit Item' : 'Create Item'}
+      title={readOnly ? 'View Item' : (item ? 'Edit Item' : 'Create Item')}
       className="max-w-2xl"
     >
       <div className="p-6 space-y-6">
@@ -184,6 +186,7 @@ export function ItemEditModal({
             value={formData.title}
             onChange={(e) => setFormData({ ...formData, title: e.target.value })}
             placeholder="Enter item title"
+            disabled={readOnly}
           />
         </div>
 
@@ -195,9 +198,10 @@ export function ItemEditModal({
           <textarea
             value={formData.description}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-700"
             rows={3}
             placeholder="Enter item description"
+            disabled={readOnly}
           />
         </div>
 
@@ -210,12 +214,14 @@ export function ItemEditModal({
             {STATUS_OPTIONS.map((status) => (
               <button
                 key={status.value}
-                onClick={() => setFormData({ ...formData, status: status.value })}
+                onClick={() => !readOnly && setFormData({ ...formData, status: status.value })}
+                disabled={readOnly}
                 className={cn(
                   "flex-1 px-4 py-2 rounded-lg border-2 font-medium transition-all",
                   formData.status === status.value
                     ? `bg-gradient-to-r ${status.color} text-white border-transparent shadow-md`
-                    : "border-gray-300 text-gray-700 hover:border-gray-400"
+                    : "border-gray-300 text-gray-700 hover:border-gray-400",
+                  readOnly && "opacity-60 cursor-not-allowed"
                 )}
               >
                 {status.label}
@@ -233,12 +239,14 @@ export function ItemEditModal({
             {CATEGORY_OPTIONS.map((category) => (
               <button
                 key={category.value}
-                onClick={() => setFormData({ ...formData, category: category.value })}
+                onClick={() => !readOnly && setFormData({ ...formData, category: category.value })}
+                disabled={readOnly}
                 className={cn(
                   "flex-1 px-4 py-2 rounded-lg border font-medium transition-colors",
                   formData.category === category.value
                     ? "bg-blue-50 border-blue-300 text-blue-700"
-                    : "border-gray-300 text-gray-700 hover:border-gray-400"
+                    : "border-gray-300 text-gray-700 hover:border-gray-400",
+                  readOnly && "opacity-60 cursor-not-allowed"
                 )}
               >
                 {category.label}
@@ -255,7 +263,8 @@ export function ItemEditModal({
           <select
             value={formData.module_id || ''}
             onChange={(e) => setFormData({ ...formData, module_id: e.target.value || null })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-700"
+            disabled={readOnly}
           >
             <option value="">No module assigned</option>
             {modules.map((module) => (
@@ -279,7 +288,8 @@ export function ItemEditModal({
           <select
             value={formData.team_id || ''}
             onChange={(e) => setFormData({ ...formData, team_id: e.target.value || null })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-700"
+            disabled={readOnly}
           >
             <option value="">No team assigned</option>
             {teams.map((team) => (
@@ -304,10 +314,11 @@ export function ItemEditModal({
             <select
               value={formData.objective_id || ''}
               onChange={(e) => setFormData({ ...formData, objective_id: e.target.value || null })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-700"
+              disabled={readOnly}
             >
               <option value="">No objective assigned</option>
-              {objectives.map((objective) => (
+              {objectives.filter(obj => obj.id !== 'unassigned-virtual').map((objective) => (
                 <option key={objective.id} value={objective.id}>
                   {objective.title}
                 </option>
@@ -315,7 +326,7 @@ export function ItemEditModal({
             </select>
             
             {/* Create new objective */}
-            {onCreateObjective && (
+            {onCreateObjective && !readOnly && (
               <div className="flex gap-2">
                 <Input
                   value={newObjectiveTitle}
@@ -349,6 +360,7 @@ export function ItemEditModal({
               tags: e.target.value.split(',').map(tag => tag.trim()).filter(Boolean)
             })}
             placeholder="Enter tags separated by commas"
+            disabled={readOnly}
           />
           <p className="text-xs text-gray-500 mt-1">
             Tags help categorize and search for items
@@ -357,10 +369,12 @@ export function ItemEditModal({
 
         {/* Action Buttons */}
         <div className="flex gap-3 pt-4 border-t border-gray-200">
-          <Button onClick={handleSaveAndClose} disabled={!formData.title.trim()} className="flex-1">
-            {item ? 'Save Changes' : 'Create Item'}
-          </Button>
-          {item && onDelete && (
+          {!readOnly && (
+            <Button onClick={handleSaveAndClose} disabled={!formData.title.trim()} className="flex-1">
+              {item ? 'Save Changes' : 'Create Item'}
+            </Button>
+          )}
+          {!readOnly && item && onDelete && (
             <Button 
               variant="outline" 
               onClick={handleDelete}
@@ -370,8 +384,8 @@ export function ItemEditModal({
               Delete
             </Button>
           )}
-          <Button variant="outline" onClick={onClose}>
-            Cancel
+          <Button variant="outline" onClick={onClose} className={readOnly ? "flex-1" : ""}>
+            {readOnly ? 'Close' : 'Cancel'}
           </Button>
         </div>
       </div>

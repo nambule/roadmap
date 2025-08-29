@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase'
-import { RoadmapWithData, ViewMode, DetailLevel, ViewType, CardLayout, RoadmapItem as RoadmapItemType, Objective, Module, Team, NewObjective, NewModule, NewTeam } from '@/types'
+import { RoadmapWithData, ViewMode, DetailLevel, ViewType, CardLayout, CardDisplayOptions, RoadmapItem as RoadmapItemType, Objective, Module, Team, NewObjective, NewModule, NewTeam } from '@/types'
 import { AuthGuard } from '@/components/AuthGuard'
 import { RoadmapBoard } from '@/components/RoadmapBoard'
 import toast from 'react-hot-toast'
@@ -20,6 +20,11 @@ export default function RoadmapPage() {
   const [detailLevel, setDetailLevel] = useState<DetailLevel>('full')
   const [viewType, setViewType] = useState<ViewType>('objective')
   const [cardLayout, setCardLayout] = useState<CardLayout>('full')
+  const [cardDisplayOptions, setCardDisplayOptions] = useState<CardDisplayOptions>({
+    showDescription: true,
+    showCategory: true,
+    showTeam: true
+  })
 
   useEffect(() => {
     if (roadmapId) {
@@ -69,12 +74,28 @@ export default function RoadmapPage() {
 
       if (itemsError) throw itemsError
 
+      // Create a special virtual objective to hold unassigned items
+      const unassignedItems = (itemsData || []).filter(item => item.objective_id === null)
+      const virtualUnassignedObjective = {
+        id: 'unassigned-virtual',
+        roadmap_id: roadmapData.id,
+        title: 'Virtual Unassigned Container',
+        color: '#94a3b8',
+        order_index: -1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        items: unassignedItems
+      }
+
       const roadmapWithData: RoadmapWithData = {
         ...roadmapData,
-        objectives: (objectivesData || []).map(objective => ({
-          ...objective,
-          items: (itemsData || []).filter(item => item.objective_id === objective.id)
-        })),
+        objectives: [
+          virtualUnassignedObjective,
+          ...(objectivesData || []).map(objective => ({
+            ...objective,
+            items: (itemsData || []).filter(item => item.objective_id === objective.id)
+          }))
+        ],
         modules: modulesData || [],
         teams: teamsData || []
       }
@@ -479,9 +500,11 @@ export default function RoadmapPage() {
         detailLevel={detailLevel}
         viewType={viewType}
         cardLayout={cardLayout}
+        cardDisplayOptions={cardDisplayOptions}
         onDetailLevelChange={setDetailLevel}
         onViewTypeChange={setViewType}
         onCardLayoutChange={setCardLayout}
+        onCardDisplayOptionsChange={setCardDisplayOptions}
         onShare={handleShare}
         onExport={handleExport}
         onNavigateHome={handleNavigateHome}
@@ -492,9 +515,11 @@ export default function RoadmapPage() {
         detailLevel={detailLevel}
         viewType={viewType}
         cardLayout={cardLayout}
+        cardDisplayOptions={cardDisplayOptions}
         onDetailLevelChange={setDetailLevel}
         onViewTypeChange={setViewType}
         onCardLayoutChange={setCardLayout}
+        onCardDisplayOptionsChange={setCardDisplayOptions}
         onShare={handleShare}
         onExport={handleExport}
         onAddObjective={handleAddObjective}

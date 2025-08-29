@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, closestCenter, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core'
+import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, CollisionDetection } from '@dnd-kit/core'
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { RoadmapWithData, ViewMode, DetailLevel, ViewType, CardLayout, RoadmapItem as RoadmapItemType, Objective, Module, Team, RoadmapStatus, NewObjective, NewModule, NewTeam } from '@/types'
+import { RoadmapWithData, ViewMode, DetailLevel, ViewType, CardLayout, CardDisplayOptions, RoadmapItem as RoadmapItemType, Objective, Module, Team, RoadmapStatus, NewObjective, NewModule, NewTeam } from '@/types'
 import { RoadmapItem } from './RoadmapItem'
 import { SettingsModal } from './SettingsModal'
 import { ItemEditModal } from './ItemEditModal'
+import { ImportModal } from './ImportModal'
 import { Button } from './ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card'
 import { 
@@ -16,13 +17,15 @@ import {
   Download, 
   Plus, 
   Edit3,
-  MoreHorizontal,
-  AlignJustify,
   Maximize,
   Minimize,
   Home,
   Columns2,
-  RectangleHorizontal
+  RectangleHorizontal,
+  FileText,
+  Eye,
+  Edit,
+  Upload
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -31,9 +34,11 @@ interface RoadmapBoardProps {
   detailLevel?: DetailLevel
   viewType?: ViewType
   cardLayout?: CardLayout
+  cardDisplayOptions?: CardDisplayOptions
   onDetailLevelChange?: (level: DetailLevel) => void
   onViewTypeChange?: (type: ViewType) => void
   onCardLayoutChange?: (layout: CardLayout) => void
+  onCardDisplayOptionsChange?: (options: CardDisplayOptions) => void
   onShare?: () => void
   onExport?: () => void
   onAddObjective?: (objective: NewObjective) => Promise<void>
@@ -58,11 +63,15 @@ interface RoadmapBoardProps {
 function DraggableRoadmapItem({ 
   item, 
   onEdit,
-  isRecentlyMoved = false
+  isRecentlyMoved = false,
+  cardDisplayOptions,
+  canEdit = true
 }: { 
   item: RoadmapItemType
   onEdit: () => void
   isRecentlyMoved?: boolean
+  cardDisplayOptions?: CardDisplayOptions
+  canEdit?: boolean
 }) {
   const {
     attributes,
@@ -78,6 +87,20 @@ function DraggableRoadmapItem({
       easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
     },
   })
+
+  // If not in edit mode, return regular RoadmapItem without drag functionality
+  if (!canEdit) {
+    return (
+      <RoadmapItem
+        item={item}
+        viewMode="read-only"
+        detailLevel="full"
+        onEdit={onEdit}
+        isDragging={false}
+        cardDisplayOptions={cardDisplayOptions}
+      />
+    )
+  }
 
   const dragStyle = {
     transform: CSS.Transform.toString(transform),
@@ -99,10 +122,11 @@ function DraggableRoadmapItem({
     >
       <RoadmapItem
         item={item}
-        viewMode="edit"
+        viewMode={canEdit ? "edit" : "read-only"}
         detailLevel="full"
         onEdit={onEdit}
         isDragging={isDragging}
+        cardDisplayOptions={cardDisplayOptions}
       />
     </div>
   )
@@ -169,9 +193,15 @@ export function RoadmapBoard({
   detailLevel = 'full',
   viewType = 'objective',
   cardLayout = 'full',
+  cardDisplayOptions = {
+    showDescription: true,
+    showCategory: false,
+    showTeam: false
+  },
   onDetailLevelChange,
   onViewTypeChange,
   onCardLayoutChange,
+  onCardDisplayOptionsChange,
   onShare,
   onExport,
   onAddObjective,
@@ -193,6 +223,8 @@ export function RoadmapBoard({
 }: RoadmapBoardProps) {
   const [showControls, setShowControls] = useState(true)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [isEditMode, setIsEditMode] = useState(true)
   const [editingItem, setEditingItem] = useState<RoadmapItemType | null>(null)
   const [isCreatingItem, setIsCreatingItem] = useState(false)
   const [editingRoadmapTitle, setEditingRoadmapTitle] = useState(false)
@@ -207,7 +239,7 @@ export function RoadmapBoard({
     status?: RoadmapStatus
   } | null>(null)
   
-  const canEdit = true // Always in edit mode now
+  const canEdit = isEditMode
   
   // Drag and drop setup
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -220,6 +252,20 @@ export function RoadmapBoard({
       activationConstraint: { distance: 8 },
     })
   )
+
+  // Custom collision detection that prioritizes DroppableColumn over individual items
+  const customCollisionDetection: CollisionDetection = (args) => {
+    const defaultCollisions = closestCenter(args)
+    
+    // Filter to prioritize drop zones with pattern {id}-{status} over individual items
+    const statusDropZones = defaultCollisions.filter(collision => {
+      const id = collision.id as string
+      return id.match(/^(.+)-(now|next|later)$/)
+    })
+    
+    // If we found status drop zones, use those; otherwise use default
+    return statusDropZones.length > 0 ? statusDropZones : defaultCollisions
+  }
 
   // Create an optimistically updated version of the roadmap
   const getOptimisticRoadmap = () => {
@@ -259,7 +305,7 @@ export function RoadmapBoard({
     
     // Check if there are items without module assignments
     const allItems = optimisticRoadmap.objectives.flatMap(obj => obj.items)
-    const unassignedItems = allItems.filter(item => !item.module_id)
+    const unassignedItems = allItems.filter(item => item.module_id === null || item.module_id === undefined)
     
     if (unassignedItems.length > 0) {
       modulesWithItems.push({
@@ -283,12 +329,19 @@ export function RoadmapBoard({
       .sort((a, b) => a.order_index - b.order_index)
   }
 
+  const getUnassignedItemsForStatus = (status: RoadmapStatus) => {
+    const allItems = optimisticRoadmap.objectives.flatMap(obj => obj.items)
+    return allItems.filter(item => (item.objective_id === null || item.objective_id === undefined) && item.status === status)
+      .sort((a, b) => a.order_index - b.order_index)
+  }
+
+
   const getTeamsWithItems = () => {
     const teamsWithItems = [...optimisticRoadmap.teams].sort((a, b) => a.order_index - b.order_index)
     
     // Check if there are items without team assignments
-    const allItems = roadmap.objectives.flatMap(obj => obj.items)
-    const unassignedItems = allItems.filter(item => !item.team_id)
+    const allItems = optimisticRoadmap.objectives.flatMap(obj => obj.items)
+    const unassignedItems = allItems.filter(item => item.team_id === null || item.team_id === undefined)
     
     if (unassignedItems.length > 0) {
       teamsWithItems.push({
@@ -305,6 +358,7 @@ export function RoadmapBoard({
     
     return teamsWithItems
   }
+
 
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event
@@ -368,14 +422,27 @@ export function RoadmapBoard({
     }
   }
 
-  return (
-    <DndContext 
-      sensors={sensors} 
-      collisionDetection={closestCenter} 
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+  const handleImport = async (items: Partial<RoadmapItemType>[]) => {
+    if (!onSaveItem) return
+
+    const importPromises = items.map(item => 
+      onSaveItem(null, {
+        title: item.title || 'Missing title',
+        description: item.description || '',
+        status: item.status || 'later',
+        category: item.category || 'business',
+        objective_id: item.objective_id || null,
+        module_id: item.module_id || null,
+        team_id: item.team_id || null,
+        tags: item.tags || []
+      })
+    )
+
+    await Promise.all(importPromises)
+  }
+
+  const mainContent = (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-lg border-b border-white/20 shadow-sm">
         <div className="max-w-[95rem] mx-auto px-4 sm:px-6 lg:px-8">
@@ -445,22 +512,25 @@ export function RoadmapBoard({
                   {/* Mobile: Stack vertically, Desktop: Horizontal */}
                   <div className="flex items-center gap-2 lg:gap-3">
                     
-                    <div className="hidden sm:flex items-center bg-white/60 backdrop-blur-sm rounded-xl p-1 border border-gray-200/50">
+                    {/* View/Edit Mode Toggle */}
+                    <div className="flex items-center bg-white/60 backdrop-blur-sm rounded-xl p-1 border border-gray-200/50">
                       <Button
-                        variant={detailLevel === 'compact' ? 'default' : 'ghost'}
+                        variant={!isEditMode ? 'default' : 'ghost'}
                         size="sm"
-                        className="rounded-lg"
-                        onClick={() => onDetailLevelChange?.('compact')}
+                        className="rounded-lg text-xs lg:text-sm px-2 lg:px-3"
+                        onClick={() => setIsEditMode(false)}
                       >
-                        <MoreHorizontal className="h-3 w-3 lg:h-4 lg:w-4" />
+                        <Eye className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
+                        <span className="hidden sm:inline">View</span>
                       </Button>
                       <Button
-                        variant={detailLevel === 'full' ? 'default' : 'ghost'}
+                        variant={isEditMode ? 'default' : 'ghost'}
                         size="sm"
-                        className="rounded-lg"
-                        onClick={() => onDetailLevelChange?.('full')}
+                        className="rounded-lg text-xs lg:text-sm px-2 lg:px-3"
+                        onClick={() => setIsEditMode(true)}
                       >
-                        <AlignJustify className="h-3 w-3 lg:h-4 lg:w-4" />
+                        <Edit className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
+                        <span className="hidden sm:inline">Edit</span>
                       </Button>
                     </div>
                     
@@ -509,6 +579,22 @@ export function RoadmapBoard({
                         <Columns2 className="h-3 w-3 lg:h-4 lg:w-4" />
                       </Button>
                     </div>
+
+                    {/* Card Display Options */}
+                    <div className="hidden sm:flex items-center bg-white/60 backdrop-blur-sm rounded-xl p-1 border border-gray-200/50 gap-1">
+                      <Button
+                        variant={cardDisplayOptions.showDescription ? 'default' : 'ghost'}
+                        size="sm"
+                        className="rounded-lg"
+                        onClick={() => onCardDisplayOptionsChange?.({
+                          ...cardDisplayOptions,
+                          showDescription: !cardDisplayOptions.showDescription
+                        })}
+                        title="Toggle description"
+                      >
+                        <FileText className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                   
                   <div className="flex items-center gap-2">
@@ -522,22 +608,31 @@ export function RoadmapBoard({
                       <span className="hidden lg:inline">Export</span>
                     </Button>
                     
+                    {canEdit && (
+                      <Button variant="outline" size="sm" className="rounded-xl bg-white/60 backdrop-blur-sm border-gray-200/50 px-2 lg:px-3" onClick={() => setShowImportModal(true)}>
+                        <Upload className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
+                        <span className="hidden lg:inline">Import</span>
+                      </Button>
+                    )}
+                    
                     <Button variant="outline" size="sm" className="rounded-xl bg-white/60 backdrop-blur-sm border-gray-200/50 px-2 lg:px-3" onClick={() => setShowSettingsModal(true)}>
                       <Settings className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
                       <span className="hidden lg:inline">Settings</span>
                     </Button>
                     
-                    <Button 
-                      size="sm" 
-                      className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-2 lg:px-3" 
-                      onClick={() => {
-                        setCreationContext(null)
-                        setIsCreatingItem(true)
-                      }}
-                    >
-                      <Plus className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
-                      <span className="hidden sm:inline">Add Item</span>
-                    </Button>
+                    {canEdit && (
+                      <Button 
+                        size="sm" 
+                        className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-2 lg:px-3" 
+                        onClick={() => {
+                          setCreationContext(null)
+                          setIsCreatingItem(true)
+                        }}
+                      >
+                        <Plus className="h-3 w-3 lg:h-4 lg:w-4 lg:mr-1" />
+                        <span className="hidden sm:inline">Add Item</span>
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
@@ -548,19 +643,21 @@ export function RoadmapBoard({
 
       {/* Main Content */}
       <div className="max-w-[95rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {optimisticRoadmap.objectives.length === 0 ? (
+        {optimisticRoadmap.objectives.filter(obj => obj.id !== 'unassigned-virtual').length === 0 ? (
           <Card className="text-center py-16 bg-white/70 backdrop-blur-sm border-0 shadow-xl">
             <CardHeader>
               <CardTitle className="text-2xl">No objectives yet</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-gray-600 mb-6 text-lg">
-                Get started by adding your first objective to organize your roadmap items.
+                {canEdit ? 'Get started by adding your first objective to organize your roadmap items.' : 'No objectives have been created yet.'}
               </p>
-              <Button onClick={() => setShowSettingsModal(true)} className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Objective
-              </Button>
+              {canEdit && (
+                <Button onClick={() => setShowSettingsModal(true)} className="rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Objective
+                </Button>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -569,22 +666,25 @@ export function RoadmapBoard({
               /* Desktop Matrix Layout - Objectives */
               <div className="hidden lg:block">
                 {/* Column Headers */}
-                <div className="grid grid-cols-4 gap-6 mb-8">
-                  <div className="p-4"></div>
-                  {statusColumns.map((column) => (
-                    <div key={column.key} className="text-center">
-                      <div className={cn(
-                        "inline-flex items-center px-6 py-3 rounded-2xl text-white font-semibold text-lg shadow-lg",
-                        `bg-gradient-to-r ${column.gradient}`
-                      )}>
-                        {column.title}
+                <div className="sticky top-28 z-20 bg-gradient-to-br from-slate-50 to-blue-50 py-4 -mx-8 px-8 mb-4">
+                  <div className="grid grid-cols-4 gap-6">
+                    <div className="p-4"></div>
+                    {statusColumns.map((column) => (
+                      <div key={column.key} className="text-center">
+                        <div className={cn(
+                          "inline-flex items-center px-6 py-3 rounded-2xl text-white font-semibold text-lg shadow-lg",
+                          `bg-gradient-to-r ${column.gradient}`
+                        )}>
+                          {column.title}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
 
                 {/* Matrix Grid */}
                 {optimisticRoadmap.objectives
+                  .filter(obj => obj.id !== 'unassigned-virtual')
                   .sort((a, b) => a.order_index - b.order_index)
                   .map((objective) => (
                     <div key={objective.id} className="grid grid-cols-4 gap-6 mb-8">
@@ -622,17 +722,12 @@ export function RoadmapBoard({
                             id={`${objective.id}-${column.key}`}
                             className="bg-white/40 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm hover:shadow-lg transition-all duration-300"
                           >
-                            <div className="flex items-center justify-between mb-4">
-                              <div className="flex items-center gap-2">
-                                <div className={cn("w-3 h-3 rounded-full", `bg-gradient-to-r ${column.gradient}`)} />
-                                <h4 className={cn("font-medium text-sm", column.textColor)}>
-                                  {column.title}
-                                </h4>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                            <div className="flex items-center justify-end mb-4">
+                              {canEdit && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
                                 onClick={() => {
                                   setCreationContext({
                                     objectiveId: objective.id,
@@ -641,9 +736,10 @@ export function RoadmapBoard({
                                   setIsCreatingItem(true)
                                 }}
                               >
-                                <Plus className="h-3 w-3 mr-1" />
-                                Add
-                              </Button>
+                                  <Plus className="h-3 w-3 mr-1" />
+                                  Add
+                                </Button>
+                              )}
                             </div>
                             
                             {/* Multi-column card grid */}
@@ -658,10 +754,12 @@ export function RoadmapBoard({
                                     item={item}
                                     onEdit={() => setEditingItem(item)}
                                     isRecentlyMoved={recentlyMovedItems.has(item.id)}
+                                    cardDisplayOptions={cardDisplayOptions}
+                                    canEdit={canEdit}
                                   />
                                 ))}
                                 
-                                {items.length === 0 && (
+                                {items.length === 0 && canEdit && (
                                   <div className="col-span-full">
                                     <div className="text-center py-8">
                                       <Button
@@ -689,23 +787,124 @@ export function RoadmapBoard({
                       })}
                     </div>
                   ))}
+
+                {/* Unassigned Items Section */}
+                {(() => {
+                  const hasUnassignedItems = statusColumns.some(column => 
+                    getUnassignedItemsForStatus(column.key).length > 0
+                  )
+                  
+                  if (!hasUnassignedItems) return null
+
+                  return (
+                    <div className="grid grid-cols-4 gap-6 mb-8">
+                      {/* Unassigned Label Column */}
+                      <div className="bg-gray-100/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-gray-200/50 flex items-center justify-between hover:shadow-xl transition-all duration-300">
+                        <div className="flex items-center gap-4 flex-1">
+                          <div className="w-6 h-6 rounded-full shadow-sm border-2 border-gray-400 bg-gray-300" />
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-700 mb-1">
+                              No objective assigned
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              Items not assigned to any objective
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Status Columns for Unassigned Items */}
+                      {statusColumns.map((column) => {
+                        const items = getUnassignedItemsForStatus(column.key)
+                        
+                        return (
+                          <DroppableColumn
+                            key={column.key}
+                            id={`unassigned-${column.key}`}
+                            className="bg-white/40 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm hover:shadow-lg transition-all duration-300"
+                          >
+                            <div className="flex items-center justify-end mb-4">
+                              {canEdit && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                                  onClick={() => {
+                                    setCreationContext({
+                                      status: column.key
+                                    })
+                                    setIsCreatingItem(true)
+                                  }}
+                                >
+                                  <Plus className="h-3 w-3 mr-1" />
+                                  Add
+                                </Button>
+                              )}
+                            </div>
+                            
+                            <SortableContext items={items.map(item => item.id)} strategy={verticalListSortingStrategy}>
+                              <div className={cn(
+                                "grid gap-2",
+                                cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
+                              )}>
+                                {items.map((item) => (
+                                  <DraggableRoadmapItem
+                                    key={item.id}
+                                    item={item}
+                                    onEdit={() => setEditingItem(item)}
+                                    isRecentlyMoved={recentlyMovedItems.has(item.id)}
+                                    cardDisplayOptions={cardDisplayOptions}
+                                    canEdit={canEdit}
+                                  />
+                                ))}
+                                
+                                {items.length === 0 && canEdit && (
+                                  <div className="col-span-full">
+                                    <div className="text-center py-8">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
+                                        onClick={() => {
+                                          setCreationContext({
+                                            status: column.key
+                                          })
+                                          setIsCreatingItem(true)
+                                        }}
+                                      >
+                                        <Plus className="h-4 w-4 mr-2" />
+                                        Add
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </SortableContext>
+                          </DroppableColumn>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
               </div>
             ) : viewType === 'module' ? (
               /* Desktop Matrix Layout - Modules */
               <div className="hidden lg:block">
                 {/* Column Headers */}
-                <div className="grid grid-cols-4 gap-6 mb-8">
-                  <div className="p-4"></div>
-                  {statusColumns.map((column) => (
-                    <div key={column.key} className="text-center">
-                      <div className={cn(
-                        "inline-flex items-center px-6 py-3 rounded-2xl text-white font-semibold text-lg shadow-lg",
-                        `bg-gradient-to-r ${column.gradient}`
-                      )}>
-                        {column.title}
+                <div className="sticky top-28 z-20 bg-gradient-to-br from-slate-50 to-blue-50 py-4 -mx-8 px-8 mb-4">
+                  <div className="grid grid-cols-4 gap-6">
+                    <div className="p-4"></div>
+                    {statusColumns.map((column) => (
+                      <div key={column.key} className="text-center">
+                        <div className={cn(
+                          "inline-flex items-center px-6 py-3 rounded-2xl text-white font-semibold text-lg shadow-lg",
+                          `bg-gradient-to-r ${column.gradient}`
+                        )}>
+                          {column.title}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
 
                 {/* Matrix Grid - Modules */}
@@ -748,90 +947,96 @@ export function RoadmapBoard({
                       )
                       
                       return (
-                        <div key={column.key} className="bg-white/40 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm hover:shadow-lg transition-all duration-300">
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                              <div className={cn("w-3 h-3 rounded-full", `bg-gradient-to-r ${column.gradient}`)} />
-                              <h4 className={cn("font-medium text-sm", column.textColor)}>
-                                {column.title}
-                              </h4>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
-                              onClick={() => {
-                                setCreationContext({
-                                  moduleId: module.id === 'unassigned' ? undefined : module.id,
-                                  status: column.key
-                                })
-                                setIsCreatingItem(true)
-                              }}
-                            >
-                              <Plus className="h-3 w-3 mr-1" />
-                              Add
-                            </Button>
+                        <DroppableColumn
+                          key={column.key}
+                          id={`${module.id}-${column.key}`}
+                          className="bg-white/40 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm hover:shadow-lg transition-all duration-300"
+                        >
+                          <div className="flex items-center justify-end mb-4">
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                                onClick={() => {
+                                  setCreationContext({
+                                    moduleId: module.id === 'unassigned' ? undefined : module.id,
+                                    status: column.key
+                                  })
+                                  setIsCreatingItem(true)
+                                }}
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Add
+                              </Button>
+                            )}
                           </div>
                           
                           {/* Multi-column card grid */}
-                          <div className={cn(
-                            "grid gap-2",
-                            cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
-                          )}>
-                            {items.map((item) => (
-                              <RoadmapItem
-                                key={item.id}
-                                item={item}
-                                viewMode="edit"
-                                detailLevel={detailLevel}
-                                onEdit={() => setEditingItem(item)}
-                              />
-                            ))}
-                            
-                            {items.length === 0 && (
-                              <div className="col-span-full">
-                                <div className="text-center py-8">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
-                                    onClick={() => {
-                                      setCreationContext({
-                                        moduleId: module.id === 'unassigned' ? undefined : module.id,
-                                        status: column.key
-                                      })
-                                      setIsCreatingItem(true)
-                                    }}
-                                  >
-                                    <Plus className="h-4 w-4 mr-2" />
-                                    Add
-                                  </Button>
+                          <SortableContext items={items.map(item => item.id)} strategy={verticalListSortingStrategy}>
+                            <div className={cn(
+                              "grid gap-2",
+                              cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
+                            )}>
+                              {items.map((item) => (
+                                <DraggableRoadmapItem
+                                  key={item.id}
+                                  item={item}
+                                  onEdit={() => setEditingItem(item)}
+                                  isRecentlyMoved={recentlyMovedItems.has(item.id)}
+                                  cardDisplayOptions={cardDisplayOptions}
+                                  canEdit={canEdit}
+                                />
+                              ))}
+                              
+                              {items.length === 0 && canEdit && (
+                                <div className="col-span-full">
+                                  <div className="text-center py-8">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
+                                      onClick={() => {
+                                        setCreationContext({
+                                          moduleId: module.id === 'unassigned' ? undefined : module.id,
+                                          status: column.key
+                                        })
+                                        setIsCreatingItem(true)
+                                      }}
+                                    >
+                                      <Plus className="h-4 w-4 mr-2" />
+                                      Add
+                                    </Button>
+                                  </div>
                                 </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                              )}
+                            </div>
+                          </SortableContext>
+                        </DroppableColumn>
                       )
                     })}
                   </div>
                 ))}
+
               </div>
             ) : (
               /* Desktop Matrix Layout - Teams */
               <div className="hidden lg:block">
                 {/* Column Headers */}
-                <div className="grid grid-cols-4 gap-6 mb-8">
-                  <div className="p-4"></div>
-                  {statusColumns.map((column) => (
-                    <div key={column.key} className="text-center">
-                      <div className={cn(
-                        "inline-flex items-center px-6 py-3 rounded-2xl text-white font-semibold text-lg shadow-lg",
-                        `bg-gradient-to-r ${column.gradient}`
-                      )}>
-                        {column.title}
+                <div className="sticky top-28 z-20 bg-gradient-to-br from-slate-50 to-blue-50 py-4 -mx-8 px-8 mb-4">
+                  <div className="grid grid-cols-4 gap-6">
+                    <div className="p-4"></div>
+                    {statusColumns.map((column) => (
+                      <div key={column.key} className="text-center">
+                        <div className={cn(
+                          "inline-flex items-center px-6 py-3 rounded-2xl text-white font-semibold text-lg shadow-lg",
+                          `bg-gradient-to-r ${column.gradient}`
+                        )}>
+                          {column.title}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
 
                 {/* Matrix Grid - Teams */}
@@ -874,73 +1079,77 @@ export function RoadmapBoard({
                       )
                       
                       return (
-                        <div key={column.key} className="bg-white/40 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm hover:shadow-lg transition-all duration-300">
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                              <div className={cn("w-3 h-3 rounded-full", `bg-gradient-to-r ${column.gradient}`)} />
-                              <h4 className={cn("font-medium text-sm", column.textColor)}>
-                                {column.title}
-                              </h4>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
-                              onClick={() => {
-                                setCreationContext({
-                                  teamId: team.id === 'unassigned' ? undefined : team.id,
-                                  status: column.key
-                                })
-                                setIsCreatingItem(true)
-                              }}
-                            >
-                              <Plus className="h-3 w-3 mr-1" />
-                              Add
-                            </Button>
+                        <DroppableColumn
+                          key={column.key}
+                          id={`${team.id}-${column.key}`}
+                          className="bg-white/40 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm hover:shadow-lg transition-all duration-300"
+                        >
+                          <div className="flex items-center justify-end mb-4">
+                            {canEdit && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                                onClick={() => {
+                                  setCreationContext({
+                                    teamId: team.id === 'unassigned' ? undefined : team.id,
+                                    status: column.key
+                                  })
+                                  setIsCreatingItem(true)
+                                }}
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Add
+                              </Button>
+                            )}
                           </div>
                           
                           {/* Multi-column card grid */}
-                          <div className={cn(
-                            "grid gap-2",
-                            cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
-                          )}>
-                            {items.map((item) => (
-                              <RoadmapItem
-                                key={item.id}
-                                item={item}
-                                viewMode="edit"
-                                detailLevel={detailLevel}
-                                onEdit={() => setEditingItem(item)}
-                              />
-                            ))}
-                            
-                            {items.length === 0 && (
-                              <div className="col-span-full">
-                                <div className="text-center py-8">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
-                                    onClick={() => {
-                                      setCreationContext({
-                                        teamId: team.id === 'unassigned' ? undefined : team.id,
-                                        status: column.key
-                                      })
-                                      setIsCreatingItem(true)
-                                    }}
-                                  >
-                                    <Plus className="h-4 w-4 mr-2" />
-                                    Add
-                                  </Button>
+                          <SortableContext items={items.map(item => item.id)} strategy={verticalListSortingStrategy}>
+                            <div className={cn(
+                              "grid gap-2",
+                              cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
+                            )}>
+                              {items.map((item) => (
+                                <DraggableRoadmapItem
+                                  key={item.id}
+                                  item={item}
+                                  onEdit={() => setEditingItem(item)}
+                                  isRecentlyMoved={recentlyMovedItems.has(item.id)}
+                                  cardDisplayOptions={cardDisplayOptions}
+                                  canEdit={canEdit}
+                                />
+                              ))}
+                              
+                              {items.length === 0 && canEdit && (
+                                <div className="col-span-full">
+                                  <div className="text-center py-8">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="border-2 border-dashed border-white/30 hover:border-white/50 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-xl py-3 px-4 transition-all duration-200 opacity-60 hover:opacity-100"
+                                      onClick={() => {
+                                        setCreationContext({
+                                          teamId: team.id === 'unassigned' ? undefined : team.id,
+                                          status: column.key
+                                        })
+                                        setIsCreatingItem(true)
+                                      }}
+                                    >
+                                      <Plus className="h-4 w-4 mr-2" />
+                                      Add
+                                    </Button>
+                                  </div>
                                 </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                              )}
+                            </div>
+                          </SortableContext>
+                        </DroppableColumn>
                       )
                     })}
                   </div>
                 ))}
+
               </div>
             )}
 
@@ -948,6 +1157,7 @@ export function RoadmapBoard({
             <div className="lg:hidden space-y-8">
               {viewType === 'objective' ? (
                 optimisticRoadmap.objectives
+                  .filter(obj => obj.id !== 'unassigned-virtual')
                   .sort((a, b) => a.order_index - b.order_index)
                   .map((objective) => (
                     <div key={objective.id} className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/50 overflow-hidden">
@@ -985,16 +1195,7 @@ export function RoadmapBoard({
                               "p-6",
                               index !== statusColumns.length - 1 && "border-b border-gray-200/30"
                             )}>
-                              <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-3">
-                                  <div className={cn(
-                                    "w-3 h-3 rounded-full",
-                                    `bg-gradient-to-r ${column.gradient}`
-                                  )} />
-                                  <h4 className={cn("font-semibold text-sm", column.textColor)}>
-                                    {column.title}
-                                  </h4>
-                                </div>
+                              <div className="flex items-center justify-end mb-4">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1021,13 +1222,13 @@ export function RoadmapBoard({
                                     <RoadmapItem
                                       key={item.id}
                                       item={item}
-                                      viewMode="edit"
-                                      detailLevel={detailLevel}
+                                      viewMode={canEdit ? "edit" : "read-only"}
+                                      detailLevel="full"
                                       onEdit={() => setEditingItem(item)}
                                     />
                                   ))}
                                 </div>
-                              ) : (
+                              ) : canEdit ? (
                                 <div className="text-center py-6">
                                   <Button
                                     variant="ghost"
@@ -1045,7 +1246,7 @@ export function RoadmapBoard({
                                     Add
                                   </Button>
                                 </div>
-                              )}
+                              ) : null}
                             </div>
                           )
                         })}
@@ -1099,31 +1300,24 @@ export function RoadmapBoard({
                             "p-6",
                             index !== statusColumns.length - 1 && "border-b border-gray-200/30"
                           )}>
-                            <div className="flex items-center justify-between mb-4">
-                              <div className="flex items-center gap-3">
-                                <div className={cn(
-                                  "w-3 h-3 rounded-full",
-                                  `bg-gradient-to-r ${column.gradient}`
-                                )} />
-                                <h4 className={cn("font-semibold text-sm", column.textColor)}>
-                                  {column.title}
-                                </h4>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
-                                onClick={() => {
-                                  setCreationContext({
-                                    moduleId: module.id === 'unassigned' ? undefined : module.id,
-                                    status: column.key
-                                  })
-                                  setIsCreatingItem(true)
-                                }}
-                              >
-                                <Plus className="h-3 w-3 mr-1" />
-                                Add
-                              </Button>
+                            <div className="flex items-center justify-end mb-4">
+                              {canEdit && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                                  onClick={() => {
+                                    setCreationContext({
+                                      moduleId: module.id === 'unassigned' ? undefined : module.id,
+                                      status: column.key
+                                    })
+                                    setIsCreatingItem(true)
+                                  }}
+                                >
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    Add
+                                  </Button>
+                                )}
                             </div>
                             
                             {items.length > 0 ? (
@@ -1132,16 +1326,16 @@ export function RoadmapBoard({
                                 cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
                               )}>
                                 {items.map((item) => (
-                                  <RoadmapItem
+                                  <DraggableRoadmapItem
                                     key={item.id}
                                     item={item}
-                                    viewMode="edit"
-                                    detailLevel={detailLevel}
                                     onEdit={() => setEditingItem(item)}
+                                    cardDisplayOptions={cardDisplayOptions}
+                                    canEdit={canEdit}
                                   />
                                 ))}
                               </div>
-                            ) : (
+                            ) : canEdit ? (
                               <div className="text-center py-6">
                                 <Button
                                   variant="ghost"
@@ -1159,7 +1353,7 @@ export function RoadmapBoard({
                                   Add
                                 </Button>
                               </div>
-                            )}
+                            ) : null}
                           </div>
                         )
                       })}
@@ -1214,31 +1408,24 @@ export function RoadmapBoard({
                             "p-6",
                             index !== statusColumns.length - 1 && "border-b border-gray-200/30"
                           )}>
-                            <div className="flex items-center justify-between mb-4">
-                              <div className="flex items-center gap-3">
-                                <div className={cn(
-                                  "w-3 h-3 rounded-full",
-                                  `bg-gradient-to-r ${column.gradient}`
-                                )} />
-                                <h4 className={cn("font-semibold text-sm", column.textColor)}>
-                                  {column.title}
-                                </h4>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
-                                onClick={() => {
-                                  setCreationContext({
-                                    teamId: team.id === 'unassigned' ? undefined : team.id,
-                                    status: column.key
-                                  })
-                                  setIsCreatingItem(true)
-                                }}
-                              >
-                                <Plus className="h-3 w-3 mr-1" />
-                                Add
-                              </Button>
+                            <div className="flex items-center justify-end mb-4">
+                              {canEdit && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-8 px-3 rounded-xl bg-white/60 hover:bg-white/80 backdrop-blur-sm border border-white/50 shadow-sm hover:shadow-md transition-all duration-200 opacity-70 hover:opacity-100"
+                                  onClick={() => {
+                                    setCreationContext({
+                                      teamId: team.id === 'unassigned' ? undefined : team.id,
+                                      status: column.key
+                                    })
+                                    setIsCreatingItem(true)
+                                  }}
+                                >
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    Add
+                                  </Button>
+                                )}
                             </div>
                             
                             {items.length > 0 ? (
@@ -1247,16 +1434,16 @@ export function RoadmapBoard({
                                 cardLayout === 'full' ? "grid-cols-1" : "grid-cols-2"
                               )}>
                                 {items.map((item) => (
-                                  <RoadmapItem
+                                  <DraggableRoadmapItem
                                     key={item.id}
                                     item={item}
-                                    viewMode="edit"
-                                    detailLevel={detailLevel}
                                     onEdit={() => setEditingItem(item)}
+                                    cardDisplayOptions={cardDisplayOptions}
+                                    canEdit={canEdit}
                                   />
                                 ))}
                               </div>
-                            ) : (
+                            ) : canEdit ? (
                               <div className="text-center py-6">
                                 <Button
                                   variant="ghost"
@@ -1274,7 +1461,7 @@ export function RoadmapBoard({
                                   Add
                                 </Button>
                               </div>
-                            )}
+                            ) : null}
                           </div>
                         )
                       })}
@@ -1291,7 +1478,7 @@ export function RoadmapBoard({
       <SettingsModal
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
-        objectives={optimisticRoadmap.objectives}
+        objectives={optimisticRoadmap.objectives.filter(obj => obj.id !== 'unassigned-virtual')}
         modules={optimisticRoadmap.modules}
         teams={optimisticRoadmap.teams}
         onAddObjective={onAddObjective!}
@@ -1310,7 +1497,7 @@ export function RoadmapBoard({
         <SettingsModal
           isOpen={true}
           onClose={() => setEditingModule(null)}
-          objectives={optimisticRoadmap.objectives}
+          objectives={optimisticRoadmap.objectives.filter(obj => obj.id !== 'unassigned-virtual')}
           modules={optimisticRoadmap.modules}
           teams={optimisticRoadmap.teams}
           initialTab="modules"
@@ -1332,7 +1519,7 @@ export function RoadmapBoard({
         <SettingsModal
           isOpen={true}
           onClose={() => setEditingObjective(null)}
-          objectives={optimisticRoadmap.objectives}
+          objectives={optimisticRoadmap.objectives.filter(obj => obj.id !== 'unassigned-virtual')}
           modules={optimisticRoadmap.modules}
           teams={optimisticRoadmap.teams}
           initialTab="objectives"
@@ -1354,7 +1541,7 @@ export function RoadmapBoard({
         <SettingsModal
           isOpen={true}
           onClose={() => setEditingTeam(null)}
-          objectives={optimisticRoadmap.objectives}
+          objectives={optimisticRoadmap.objectives.filter(obj => obj.id !== 'unassigned-virtual')}
           modules={optimisticRoadmap.modules}
           teams={optimisticRoadmap.teams}
           initialTab="teams"
@@ -1380,7 +1567,7 @@ export function RoadmapBoard({
           setCreationContext(null)
         }}
         item={editingItem}
-        objectives={roadmap.objectives}
+        objectives={roadmap.objectives.filter(obj => obj.id !== 'unassigned-virtual')}
         modules={roadmap.modules}
         teams={roadmap.teams}
         onSave={async (updates) => {
@@ -1394,23 +1581,48 @@ export function RoadmapBoard({
         defaultModuleId={creationContext?.moduleId}
         defaultTeamId={creationContext?.teamId}
         defaultStatus={creationContext?.status}
+        readOnly={!canEdit}
+      />
+
+      {/* Import Modal */}
+      <ImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        objectives={optimisticRoadmap.objectives.filter(obj => obj.id !== 'unassigned-virtual')}
+        modules={optimisticRoadmap.modules}
+        teams={optimisticRoadmap.teams}
+        onImport={handleImport}
+        onCreateObjective={onCreateObjective}
       />
       
       {/* Drag Overlay - shows the dragged item while dragging */}
-      <DragOverlay>
-        {draggedItem ? (
-          <div className="transform rotate-3 scale-105 shadow-2xl opacity-90">
-            <RoadmapItem
-              item={draggedItem}
-              viewMode="edit"
-              detailLevel="full"
-              onEdit={() => {}}
-              isDragging={true}
-            />
-          </div>
-        ) : null}
-      </DragOverlay>
+      {canEdit && (
+        <DragOverlay>
+          {draggedItem ? (
+            <div className="transform rotate-3 scale-105 shadow-2xl opacity-90">
+              <RoadmapItem
+                item={draggedItem}
+                viewMode={canEdit ? "edit" : "read-only"}
+                detailLevel="full"
+                onEdit={() => {}}
+                isDragging={true}
+                cardDisplayOptions={cardDisplayOptions}
+              />
+            </div>
+          ) : null}
+        </DragOverlay>
+      )}
       </div>
-    </DndContext>
   )
+
+  return canEdit ? (
+    <DndContext 
+      sensors={sensors} 
+      collisionDetection={customCollisionDetection} 
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      {mainContent}
+    </DndContext>
+  ) : mainContent
 }
