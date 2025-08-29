@@ -28,6 +28,12 @@ export type DetailLevel = 'compact' | 'full'
 export type ViewType = 'objective' | 'module' | 'team'
 export type CardLayout = 'full' | 'compact'
 
+export interface CardDisplayOptions {
+  showDescription: boolean
+  showCategory: boolean
+  showTeam: boolean
+}
+
 export interface RoadmapWithData extends Roadmap {
   objectives: (Objective & {
     items: RoadmapItem[]
