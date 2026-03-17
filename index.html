@@ -16,7 +16,7 @@
         <p class="eyebrow">Roadmap Editor</p>
         <h1>Design Product Roadmaps</h1>
         <p class="intro">
-          Add versions, stack sections, and drag roadmap subjects across the grid. The board starts with a layout inspired by your reference image.
+          Add versions in 4-column blocks, stack sections, and drag roadmap subjects across the grid. The board starts with a layout inspired by your reference image.
         </p>
       </div>
 
@@ -65,11 +65,11 @@
           </label>
           <div class="field-row">
             <label class="field">
-              <span>Start</span>
+              <span>Start Column</span>
               <select id="subjectStartSelect"></select>
             </label>
             <label class="field">
-              <span>Span</span>
+              <span>Length</span>
               <input id="subjectSpanInput" type="number" min="1" value="1">
             </label>
           </div>
@@ -118,7 +118,7 @@
         </label>
         <div class="field-row">
           <label class="field">
-            <span>Start</span>
+            <span>Start Column</span>
             <select id="modalSubjectStartSelect"></select>
           </label>
           <label class="field">
@@ -148,12 +148,6 @@
     <div class="editor-item">
       <div class="editor-item-main">
         <input class="version-name" type="text">
-        <select class="version-quarter">
-          <option value="Q1">Q1</option>
-          <option value="Q2">Q2</option>
-          <option value="Q3">Q3</option>
-          <option value="Q4">Q4</option>
-        </select>
       </div>
       <button class="icon-button danger version-remove" type="button" aria-label="Delete version">×</button>
     </div>

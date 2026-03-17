@@ -1,16 +1,13 @@
 const STORAGE_KEY = "roadmap-designer-state-v1";
 const PANEL_STORAGE_KEY = "roadmap-designer-panel-collapsed-v1";
+const COLUMNS_PER_VERSION = 4;
 
 const demoState = {
   company: "ADVENT CO.",
   title: "ENVISION 6.0",
   versions: [
-    { id: crypto.randomUUID(), name: "JAN", quarter: "Q1" },
-    { id: crypto.randomUUID(), name: "FEB", quarter: "Q1" },
-    { id: crypto.randomUUID(), name: "MAR", quarter: "Q1" },
-    { id: crypto.randomUUID(), name: "APR", quarter: "Q2" },
-    { id: crypto.randomUUID(), name: "MAY", quarter: "Q2" },
-    { id: crypto.randomUUID(), name: "JUN", quarter: "Q2" }
+    { id: crypto.randomUUID(), name: "V1" },
+    { id: crypto.randomUUID(), name: "V2" }
   ],
   sections: [
     {
@@ -114,18 +111,35 @@ render();
 function loadState() {
   const saved = window.localStorage.getItem(STORAGE_KEY);
   if (!saved) {
-    return structuredClone(demoState);
+    return normalizeState(structuredClone(demoState));
   }
 
   try {
-    return JSON.parse(saved);
+    return normalizeState(JSON.parse(saved));
   } catch {
-    return structuredClone(demoState);
+    return normalizeState(structuredClone(demoState));
   }
 }
 
 function saveState() {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function normalizeState(inputState) {
+  const nextState = structuredClone(inputState);
+  const versionCount = Array.isArray(nextState.versions) ? nextState.versions.length : 0;
+  const groupCount = Math.max(1, Math.ceil(versionCount / COLUMNS_PER_VERSION));
+
+  nextState.versions = Array.from({ length: groupCount }, (_, index) => {
+    const existing = inputState.versions?.[index];
+    const isGroupedVersion = existing?.name?.startsWith("V");
+    return {
+      id: existing?.id || crypto.randomUUID(),
+      name: isGroupedVersion ? existing.name.toUpperCase() : `V${index + 1}`
+    };
+  });
+
+  return nextState;
 }
 
 function bindStaticEvents() {
@@ -147,8 +161,7 @@ function bindStaticEvents() {
     const nextIndex = state.versions.length;
     state.versions.push({
       id: crypto.randomUUID(),
-      name: `V${nextIndex + 1}`,
-      quarter: `Q${Math.min(4, Math.floor(nextIndex / 3) + 1)}`
+      name: `V${nextIndex + 1}`
     });
     clampSubjects();
     commit();
@@ -221,12 +234,13 @@ function commit(shouldRender = true) {
 }
 
 function clampSubjects() {
-  const maxIndex = Math.max(0, state.versions.length - 1);
+  const totalColumns = getTotalColumns();
+  const maxIndex = Math.max(0, totalColumns - 1);
   state.subjects = state.subjects
     .filter((subject) => state.sections.some((section) => section.id === subject.sectionId))
     .map((subject) => {
       const start = Math.min(subject.start, maxIndex);
-      const remaining = state.versions.length - start;
+      const remaining = totalColumns - start;
       return {
         ...subject,
         start,
@@ -277,19 +291,12 @@ function renderVersionEditor() {
   state.versions.forEach((version) => {
     const node = versionTemplate.content.firstElementChild.cloneNode(true);
     const nameInput = node.querySelector(".version-name");
-    const quarterSelect = node.querySelector(".version-quarter");
     const removeButton = node.querySelector(".version-remove");
 
     nameInput.value = version.name;
-    quarterSelect.value = version.quarter;
 
     nameInput.addEventListener("input", (event) => {
       version.name = event.target.value.toUpperCase();
-      commit();
-    });
-
-    quarterSelect.addEventListener("change", (event) => {
-      version.quarter = event.target.value;
       commit();
     });
 
@@ -351,8 +358,8 @@ function renderSectionEditor() {
 
 function renderSubjectFormOptions() {
   fillSectionOptions(subjectSectionSelect);
-  fillVersionOptions(subjectStartSelect);
-  const maxSpan = Math.max(1, state.versions.length);
+  fillColumnOptions(subjectStartSelect);
+  const maxSpan = Math.max(1, getTotalColumns());
   subjectSpanInput.max = String(maxSpan);
 }
 
@@ -366,20 +373,23 @@ function fillSectionOptions(selectNode) {
   });
 }
 
-function fillVersionOptions(selectNode) {
+function fillColumnOptions(selectNode) {
   selectNode.innerHTML = "";
-  state.versions.forEach((version, index) => {
+  for (let index = 0; index < getTotalColumns(); index += 1) {
     const option = document.createElement("option");
     option.value = String(index);
-    option.textContent = version.name;
+    option.textContent = `C${index + 1}`;
     selectNode.appendChild(option);
-  });
+  }
 }
 
 function renderBoard() {
   const versionCount = state.versions.length || 1;
+  const totalColumns = getTotalColumns() || COLUMNS_PER_VERSION;
   board.innerHTML = "";
   board.style.setProperty("--version-count", String(versionCount));
+  board.style.setProperty("--timeline-column-count", String(totalColumns));
+  board.style.setProperty("--roadmap-column-count", String(totalColumns));
 
   const header = document.createElement("div");
   header.className = "board-header";
@@ -387,17 +397,16 @@ function renderBoard() {
     <div>
       <p class="board-kicker"><span>${escapeHtml(state.company)}</span> // <strong>${escapeHtml(state.title)}</strong> // <span>PRODUCT ROADMAP</span></p>
     </div>
-    <div class="legend">${renderLegend()}</div>
   `;
 
   const timeline = document.createElement("div");
   timeline.className = "timeline";
-  timeline.style.setProperty("--version-count", String(versionCount));
-  timeline.innerHTML = `<div class="timeline-spacer"></div>${state.versions
+  const versionGroups = getVersionGroups();
+  timeline.innerHTML = `<div class="timeline-spacer"></div>${versionGroups
     .map(
-      (version) => `
-      <div class="version-dot" data-quarter="${version.quarter}">
-        ${escapeHtml(version.name)}
+      (group) => `
+      <div class="version-group" style="grid-column:${group.start + 2} / span ${group.span};">
+        <span class="version-group-label">${escapeHtml(group.label)}</span>
       </div>`
     )
     .join("")}`;
@@ -409,7 +418,7 @@ function renderBoard() {
     const sectionNode = document.createElement("section");
     sectionNode.className = "section";
     sectionNode.innerHTML = `
-      <div class="section-grid" style="--version-count:${versionCount}; --lane-count:${getLaneCount(section.id)};">
+      <div class="section-grid" style="--roadmap-column-count:${totalColumns}; --lane-count:${getLaneCount(section.id)};">
         <div class="section-label">
           <div class="section-icon-badge" style="color:${section.color}; border: 4px solid ${applyAlpha(section.color, 0.55)};">${escapeHtml(section.icon || "✦")}</div>
           <h3 class="section-name">${escapeHtml(section.name)}</h3>
@@ -475,30 +484,12 @@ function getLaneCount(sectionId) {
   return Math.max(3, ...rows.map((row) => row + 1));
 }
 
-function renderLegend() {
-  const quarters = [...new Set(state.versions.map((version) => version.quarter))];
-  return quarters
-    .map((quarter) => {
-      const version = state.versions.find((item) => item.quarter === quarter);
-      const color = quarterColor(version?.quarter || "Q1");
-      return `
-        <div class="legend-item">
-          <span class="legend-dot" style="background:${color};"></span>
-          <span>${quarter}</span>
-        </div>
-      `;
-    })
-    .join("");
-}
-
-function quarterColor(quarter) {
-  const map = {
-    Q1: "#363636",
-    Q2: "#9b9b9b",
-    Q3: "#7d7d7d",
-    Q4: "#bdb6aa"
-  };
-  return map[quarter] || map.Q1;
+function getVersionGroups() {
+  return state.versions.map((version, index) => ({
+    start: index * COLUMNS_PER_VERSION,
+    span: COLUMNS_PER_VERSION,
+    label: version.name
+  }));
 }
 
 function handleDragStart(event) {
@@ -562,7 +553,7 @@ function getDropPlacement(track, event, span) {
   const versionWidth = parseFloat(styles.getPropertyValue("--version-width"));
   const rowHeight = parseFloat(styles.getPropertyValue("--row-height"));
   const laneCount = getLaneCount(track.dataset.sectionId);
-  const maxCol = Math.max(0, state.versions.length - span);
+  const maxCol = Math.max(0, getTotalColumns() - span);
 
   const offsetX = Math.max(0, Math.min(event.clientX - rect.left, rect.width - 1));
   const offsetY = Math.max(0, Math.min(event.clientY - rect.top, rect.height - 1));
@@ -619,7 +610,7 @@ function openSubjectEditor(subjectId) {
   }
   editingSubjectId = subjectId;
   fillSectionOptions(modalSubjectSectionSelect);
-  fillVersionOptions(modalSubjectStartSelect);
+  fillColumnOptions(modalSubjectStartSelect);
   modalSubjectTitleInput.value = subject.title;
   modalSubjectSectionSelect.value = subject.sectionId;
   modalSubjectStartSelect.value = String(subject.start);
@@ -648,7 +639,7 @@ function handleSubjectModalSubmit(event) {
 
   const start = Number(modalSubjectStartSelect.value);
   const span = Math.max(1, Number(modalSubjectSpanInput.value) || 1);
-  const boundedSpan = Math.min(span, state.versions.length - start);
+  const boundedSpan = Math.min(span, getTotalColumns() - start);
 
   subject.title = modalSubjectTitleInput.value.trim() || subject.title;
   subject.sectionId = modalSubjectSectionSelect.value;
@@ -678,11 +669,15 @@ function handleGlobalKeydown(event) {
 
 function syncModalSpanLimit() {
   const start = Number(modalSubjectStartSelect.value) || 0;
-  const maxSpan = Math.max(1, state.versions.length - start);
+  const maxSpan = Math.max(1, getTotalColumns() - start);
   modalSubjectSpanInput.max = String(maxSpan);
   if (Number(modalSubjectSpanInput.value) > maxSpan) {
     modalSubjectSpanInput.value = String(maxSpan);
   }
+}
+
+function getTotalColumns() {
+  return Math.max(COLUMNS_PER_VERSION, state.versions.length * COLUMNS_PER_VERSION);
 }
 
 function applyAlpha(hexColor, alpha) {
