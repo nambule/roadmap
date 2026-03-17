@@ -82,6 +82,8 @@ const addVersionButton = document.querySelector("#addVersionButton");
 const addSectionButton = document.querySelector("#addSectionButton");
 const addSubjectButton = document.querySelector("#addSubjectButton");
 const resetButton = document.querySelector("#resetButton");
+const exportSvgButton = document.querySelector("#exportSvgButton");
+const exportExcelButton = document.querySelector("#exportExcelButton");
 const togglePanelButton = document.querySelector("#togglePanelButton");
 const showPanelButton = document.querySelector("#showPanelButton");
 const appShell = document.querySelector(".app-shell");
@@ -104,6 +106,7 @@ let draggedSubjectId = null;
 let currentDropPreview = null;
 let isPanelCollapsed = loadPanelState();
 let editingSubjectId = null;
+let resizeSession = null;
 
 bindStaticEvents();
 render();
@@ -128,11 +131,17 @@ function saveState() {
 function normalizeState(inputState) {
   const nextState = structuredClone(inputState);
   const versionCount = Array.isArray(nextState.versions) ? nextState.versions.length : 0;
-  const groupCount = Math.max(1, Math.ceil(versionCount / COLUMNS_PER_VERSION));
+  const alreadyGrouped =
+    Array.isArray(inputState.versions) &&
+    inputState.versions.length > 0 &&
+    inputState.versions.every((version) => /^V\d+$/i.test(String(version.name || "").trim()));
+  const groupCount = alreadyGrouped
+    ? Math.max(1, versionCount)
+    : Math.max(1, Math.ceil(versionCount / COLUMNS_PER_VERSION));
 
   nextState.versions = Array.from({ length: groupCount }, (_, index) => {
     const existing = inputState.versions?.[index];
-    const isGroupedVersion = existing?.name?.startsWith("V");
+    const isGroupedVersion = /^V\d+$/i.test(String(existing?.name || "").trim());
     return {
       id: existing?.id || crypto.randomUUID(),
       name: isGroupedVersion ? existing.name.toUpperCase() : `V${index + 1}`
@@ -181,6 +190,9 @@ function bindStaticEvents() {
     subjectTitleInput.focus();
   });
 
+  exportSvgButton.addEventListener("click", exportSvg);
+  exportExcelButton.addEventListener("click", exportExcel);
+
   resetButton.addEventListener("click", () => {
     state = structuredClone(demoState);
     commit();
@@ -203,7 +215,7 @@ function bindStaticEvents() {
     const start = Number(subjectStartSelect.value);
     const span = Math.max(1, Number(subjectSpanInput.value) || 1);
     const row = Math.max(0, Number(subjectRowInput.value) || 0);
-    const boundedSpan = Math.min(span, state.versions.length - start);
+    const boundedSpan = Math.min(span, getTotalColumns() - start);
 
     state.subjects.push({
       id: crypto.randomUUID(),
@@ -378,7 +390,7 @@ function fillColumnOptions(selectNode) {
   for (let index = 0; index < getTotalColumns(); index += 1) {
     const option = document.createElement("option");
     option.value = String(index);
-    option.textContent = `C${index + 1}`;
+    option.textContent = getColumnReference(index);
     selectNode.appendChild(option);
   }
 }
@@ -444,12 +456,15 @@ function renderBoard() {
         card.style.gridRow = `${subject.row + 1}`;
         card.innerHTML = `
           <span>${escapeHtml(subject.title)}</span>
+          <button class="subject-resize-handle" type="button" title="Resize subject" aria-label="Resize subject"></button>
           <div class="subject-actions">
             <button class="subject-action" type="button" data-action="edit" title="Edit subject">✎</button>
             <button class="subject-action" type="button" data-action="delete" title="Delete subject">×</button>
           </div>
         `;
 
+        const resizeHandle = card.querySelector(".subject-resize-handle");
+        resizeHandle.addEventListener("pointerdown", (event) => handleResizeStart(event, subject.id));
         card.addEventListener("dragstart", handleDragStart);
         card.addEventListener("dragend", handleDragEnd);
         card.addEventListener("click", (event) => {
@@ -493,6 +508,10 @@ function getVersionGroups() {
 }
 
 function handleDragStart(event) {
+  if (resizeSession) {
+    event.preventDefault();
+    return;
+  }
   draggedSubjectId = event.currentTarget.dataset.subjectId;
   event.currentTarget.classList.add("dragging");
   event.dataTransfer.effectAllowed = "move";
@@ -603,6 +622,76 @@ function clearDropPreview(track) {
   }
 }
 
+function handleResizeStart(event, subjectId) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const subject = state.subjects.find((item) => item.id === subjectId);
+  const card = event.currentTarget.closest(".subject-card");
+  const track = card?.closest(".section-track");
+  if (!subject || !card || !track) {
+    return;
+  }
+
+  resizeSession = {
+    subjectId,
+    card,
+    track,
+    start: subject.start,
+    span: subject.span
+  };
+
+  card.classList.add("resizing");
+  document.body.classList.add("is-resizing-subject");
+  window.addEventListener("pointermove", handleResizeMove);
+  window.addEventListener("pointerup", handleResizeEnd);
+}
+
+function handleResizeMove(event) {
+  if (!resizeSession) {
+    return;
+  }
+
+  const subject = state.subjects.find((item) => item.id === resizeSession.subjectId);
+  if (!subject) {
+    handleResizeEnd();
+    return;
+  }
+
+  const rect = resizeSession.track.getBoundingClientRect();
+  const styles = getComputedStyle(document.documentElement);
+  const columnWidth = parseFloat(styles.getPropertyValue("--version-width"));
+  const totalColumns = getTotalColumns();
+  const rightEdge = Math.max(0, Math.min(event.clientX - rect.left, rect.width));
+  const rawEndColumn = Math.ceil(rightEdge / columnWidth);
+  const nextSpan = Math.max(1, Math.min(totalColumns - subject.start, rawEndColumn - subject.start));
+
+  resizeSession.card.style.gridColumn = `${subject.start + 1} / span ${nextSpan}`;
+  resizeSession.nextSpan = nextSpan;
+}
+
+function handleResizeEnd() {
+  if (!resizeSession) {
+    return;
+  }
+
+  const subject = state.subjects.find((item) => item.id === resizeSession.subjectId);
+  if (subject && resizeSession.nextSpan) {
+    subject.span = resizeSession.nextSpan;
+  }
+
+  resizeSession.card.classList.remove("resizing");
+  resizeSession.card.style.gridColumn = "";
+  resizeSession = null;
+  document.body.classList.remove("is-resizing-subject");
+  window.removeEventListener("pointermove", handleResizeMove);
+  window.removeEventListener("pointerup", handleResizeEnd);
+
+  if (subject) {
+    commit();
+  }
+}
+
 function openSubjectEditor(subjectId) {
   const subject = state.subjects.find((item) => item.id === subjectId);
   if (!subject) {
@@ -678,6 +767,219 @@ function syncModalSpanLimit() {
 
 function getTotalColumns() {
   return Math.max(COLUMNS_PER_VERSION, state.versions.length * COLUMNS_PER_VERSION);
+}
+
+function exportSvg() {
+  const svg = buildRoadmapSvg();
+  downloadFile(`${buildFilenameBase()}.svg`, svg, "image/svg+xml;charset=utf-8");
+}
+
+function exportExcel() {
+  const workbook = buildExcelWorkbook();
+  downloadFile(`${buildFilenameBase()}.xls`, workbook, "application/vnd.ms-excel;charset=utf-8");
+}
+
+function buildRoadmapSvg() {
+  const totalColumns = getTotalColumns();
+  const colWidth = 118;
+  const labelWidth = 190;
+  const rowHeight = 78;
+  const sectionGap = 28;
+  const headerHeight = 96;
+  const sectionTopPadding = 18;
+  const sectionBottomPadding = 20;
+  const titleX = 40;
+  const boardWidth = labelWidth + totalColumns * colWidth;
+  const sectionLayouts = state.sections.map((section) => ({
+    section,
+    lanes: getLaneCount(section.id),
+    subjects: state.subjects.filter((subject) => subject.sectionId === section.id)
+  }));
+  const sectionsHeight = sectionLayouts.reduce((sum, layout) => {
+    return sum + sectionTopPadding + layout.lanes * rowHeight + sectionBottomPadding + sectionGap;
+  }, 0);
+  const width = titleX * 2 + boardWidth;
+  const height = 56 + headerHeight + sectionsHeight;
+  let currentY = 56 + headerHeight;
+
+  const sectionMarkup = sectionLayouts.map((layout, index) => {
+    const y = currentY;
+    const laneHeight = layout.lanes * rowHeight;
+    currentY += sectionTopPadding + laneHeight + sectionBottomPadding + sectionGap;
+    const dividerTop = index === 0 ? "" : `<line x1="${titleX}" y1="${y}" x2="${titleX + boardWidth}" y2="${y}" stroke="#3e3a37" stroke-width="4" />`;
+    const labelY = y + 26;
+    const trackX = titleX + labelWidth;
+    const trackY = y + sectionTopPadding;
+    const columns = Array.from({ length: totalColumns }, (_, col) => {
+      if (col % 2 !== 0) {
+        return "";
+      }
+      return `<rect x="${trackX + col * colWidth}" y="${trackY}" width="${colWidth}" height="${laneHeight}" fill="rgba(94,77,49,0.08)" />`;
+    }).join("");
+    const cards = layout.subjects.map((subject) => {
+      const x = trackX + subject.start * colWidth + 6;
+      const yCard = trackY + subject.row * rowHeight + 6;
+      const w = subject.span * colWidth - 12;
+      const h = rowHeight - 12;
+      const lines = wrapText(subject.title, Math.max(1, Math.floor((w - 18) / 8)), 3);
+      const textY = yCard + h / 2 - ((lines.length - 1) * 14) / 2;
+      return `
+        <rect x="${x}" y="${yCard}" width="${w}" height="${h}" fill="${subject.color}" />
+        ${lines
+          .map(
+            (line, lineIndex) => `
+          <text x="${x + w / 2}" y="${textY + lineIndex * 14}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" fill="rgba(48,37,20,0.88)">${escapeXml(
+              line
+            )}</text>`
+          )
+          .join("")}
+      `;
+    }).join("");
+
+    return `
+      ${dividerTop}
+      <text x="${titleX + 36}" y="${labelY}" font-size="40" fill="${layout.section.color}" font-weight="700">${escapeXml(layout.section.icon || "✦")}</text>
+      ${layout.section.name
+        .split("\n")
+        .map(
+          (line, lineIndex) => `
+        <text x="${titleX + 8}" y="${labelY + 44 + lineIndex * 26}" font-size="24" fill="#2b2b2b">${escapeXml(line)}</text>`
+        )
+        .join("")}
+      ${columns}
+      ${cards}
+    `;
+  }).join("");
+
+  const header = state.versions
+    .map((version, index) => {
+      const x = titleX + labelWidth + index * COLUMNS_PER_VERSION * colWidth + 10;
+      const w = COLUMNS_PER_VERSION * colWidth - 20;
+      return `
+        <line x1="${x}" y1="112" x2="${x + w}" y2="112" stroke="#3e3a37" stroke-width="4" />
+        <rect x="${x + w / 2 - 38}" y="92" width="76" height="40" rx="20" fill="#363636" />
+        <text x="${x + w / 2}" y="112" text-anchor="middle" dominant-baseline="middle" font-size="20" font-weight="700" fill="#ffffff">${escapeXml(version.name)}</text>
+      `;
+    })
+    .join("");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <rect width="${width}" height="${height}" fill="#fffdf8" />
+  <text x="${titleX}" y="42" font-size="22" fill="#6d6d6d">${escapeXml(state.company)}</text>
+  <text x="${titleX + 200}" y="42" font-size="22" fill="#2b2b2b" font-weight="700">${escapeXml(state.title)}</text>
+  <text x="${titleX + 388}" y="42" font-size="22" fill="#6d6d6d">PRODUCT ROADMAP</text>
+  ${header}
+  ${sectionMarkup}
+</svg>`;
+}
+
+function buildExcelWorkbook() {
+  const rows = [];
+  rows.push(["Company", state.company]);
+  rows.push(["Title", state.title]);
+  rows.push([]);
+  rows.push(["Version", "Section", "Subject", "Start", "Length", "Row", "Color"]);
+  state.subjects.forEach((subject) => {
+    rows.push([
+      getVersionNameForColumn(subject.start),
+      getSectionName(subject.sectionId),
+      subject.title.replace(/\n/g, " "),
+      getColumnReference(subject.start),
+      String(subject.span),
+      String(subject.row + 1),
+      subject.color
+    ]);
+  });
+
+  const cells = rows
+    .map((row) => {
+      const serialized = row
+        .map((cell) => {
+          const value = cell == null ? "" : String(cell);
+          return `<Cell><Data ss:Type="String">${escapeXml(value)}</Data></Cell>`;
+        })
+        .join("");
+      return `<Row>${serialized}</Row>`;
+    })
+    .join("");
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  <Worksheet ss:Name="Roadmap">
+    <Table>${cells}</Table>
+  </Worksheet>
+</Workbook>`;
+}
+
+function getVersionNameForColumn(columnIndex) {
+  const versionIndex = Math.floor(columnIndex / COLUMNS_PER_VERSION);
+  return state.versions[versionIndex]?.name || `V${versionIndex + 1}`;
+}
+
+function getColumnReference(columnIndex) {
+  const versionName = getVersionNameForColumn(columnIndex);
+  const columnNumber = (columnIndex % COLUMNS_PER_VERSION) + 1;
+  return `${versionName}-${columnNumber}`;
+}
+
+function getSectionName(sectionId) {
+  return state.sections.find((section) => section.id === sectionId)?.name.replace(/\n/g, " ") || "";
+}
+
+function wrapText(value, charsPerLine, maxLines) {
+  const words = String(value).replace(/\n/g, " ").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = "";
+  words.forEach((word) => {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= charsPerLine || !current) {
+      current = candidate;
+      return;
+    }
+    lines.push(current);
+    current = word;
+  });
+  if (current) {
+    lines.push(current);
+  }
+  return lines.slice(0, maxLines);
+}
+
+function buildFilenameBase() {
+  return `${slugify(state.company)}-${slugify(state.title)}-roadmap`;
+}
+
+function slugify(value) {
+  return String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "roadmap";
+}
+
+function downloadFile(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function escapeXml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
 }
 
 function applyAlpha(hexColor, alpha) {

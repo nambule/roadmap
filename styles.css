@@ -228,6 +228,11 @@ input[type="color"] {
   margin-top: 14px;
 }
 
+.export-actions {
+  display: grid;
+  gap: 10px;
+}
+
 .board-area {
   min-width: 0;
   overflow: auto;
@@ -449,6 +454,10 @@ input[type="color"] {
   overflow: hidden;
 }
 
+.subject-card.resizing {
+  cursor: ew-resize;
+}
+
 .subject-card > span {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -463,6 +472,37 @@ input[type="color"] {
 
 .subject-card.dragging {
   opacity: 0.45;
+}
+
+.subject-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  background: linear-gradient(to left, rgba(45, 33, 17, 0.18), rgba(45, 33, 17, 0));
+  cursor: ew-resize;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.subject-resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 2px;
+  height: 22px;
+  background: rgba(45, 33, 17, 0.55);
+  transform: translateY(-50%);
+  box-shadow: -4px 0 0 rgba(45, 33, 17, 0.32);
+}
+
+.subject-card:hover .subject-resize-handle,
+.subject-card.resizing .subject-resize-handle {
+  opacity: 1;
 }
 
 .section-track.track-active::after {
