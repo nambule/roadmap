@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Roadmap Designer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="control-panel" id="controlPanel">
+      <div class="panel-topbar">
+        <button id="togglePanelButton" class="icon-button panel-toggle" type="button" aria-expanded="true" aria-controls="controlPanel" title="Collapse editor">←</button>
+      </div>
+      <div>
+        <p class="eyebrow">Roadmap Editor</p>
+        <h1>Design Product Roadmaps</h1>
+        <p class="intro">
+          Add versions, stack sections, and drag roadmap subjects across the grid. The board starts with a layout inspired by your reference image.
+        </p>
+      </div>
+
+      <section class="panel-card">
+        <h2>Board</h2>
+        <label class="field">
+          <span>Company</span>
+          <input id="companyInput" type="text" placeholder="Advent Co.">
+        </label>
+        <label class="field">
+          <span>Roadmap Title</span>
+          <input id="titleInput" type="text" placeholder="Envision 6.0">
+        </label>
+        <button id="resetButton" class="ghost-button" type="button">Reset demo board</button>
+      </section>
+
+      <section class="panel-card">
+        <div class="panel-header">
+          <h2>Versions</h2>
+          <button id="addVersionButton" class="primary-button" type="button">Add version</button>
+        </div>
+        <div id="versionList" class="stack"></div>
+      </section>
+
+      <section class="panel-card">
+        <div class="panel-header">
+          <h2>Sections</h2>
+          <button id="addSectionButton" class="primary-button" type="button">Add section</button>
+        </div>
+        <div id="sectionList" class="stack"></div>
+      </section>
+
+      <section class="panel-card">
+        <div class="panel-header">
+          <h2>Subjects</h2>
+          <button id="addSubjectButton" class="primary-button" type="button">Add subject</button>
+        </div>
+        <form id="subjectForm" class="subject-form">
+          <label class="field">
+            <span>Name</span>
+            <input id="subjectTitleInput" type="text" placeholder="New initiative" required>
+          </label>
+          <label class="field">
+            <span>Section</span>
+            <select id="subjectSectionSelect"></select>
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>Start</span>
+              <select id="subjectStartSelect"></select>
+            </label>
+            <label class="field">
+              <span>Span</span>
+              <input id="subjectSpanInput" type="number" min="1" value="1">
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field">
+              <span>Row</span>
+              <input id="subjectRowInput" type="number" min="0" value="0">
+            </label>
+            <label class="field">
+              <span>Color</span>
+              <input id="subjectColorInput" type="color" value="#efc15f">
+            </label>
+          </div>
+          <button class="primary-button wide" type="submit">Create subject</button>
+        </form>
+      </section>
+    </aside>
+
+    <main class="board-area">
+      <button id="showPanelButton" class="show-panel-button" type="button" aria-expanded="false" aria-controls="controlPanel" title="Expand editor">Open Editor</button>
+      <div class="board-stage">
+        <div id="roadmapBoard"></div>
+      </div>
+    </main>
+  </div>
+
+  <div id="subjectModal" class="modal-shell" aria-hidden="true">
+    <div id="subjectModalBackdrop" class="modal-backdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="subjectModalTitle">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Card Editor</p>
+          <h2 id="subjectModalTitle">Edit Roadmap Card</h2>
+        </div>
+        <button id="closeSubjectModalButton" class="icon-button" type="button" aria-label="Close editor">×</button>
+      </div>
+
+      <form id="subjectModalForm" class="subject-form modal-form">
+        <label class="field">
+          <span>Name</span>
+          <input id="modalSubjectTitleInput" type="text" required>
+        </label>
+        <label class="field">
+          <span>Section</span>
+          <select id="modalSubjectSectionSelect"></select>
+        </label>
+        <div class="field-row">
+          <label class="field">
+            <span>Start</span>
+            <select id="modalSubjectStartSelect"></select>
+          </label>
+          <label class="field">
+            <span>Length</span>
+            <input id="modalSubjectSpanInput" type="number" min="1" value="1">
+          </label>
+        </div>
+        <div class="field-row">
+          <label class="field">
+            <span>Row</span>
+            <input id="modalSubjectRowInput" type="number" min="0" value="0">
+          </label>
+          <label class="field">
+            <span>Color</span>
+            <input id="modalSubjectColorInput" type="color" value="#efc15f">
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button id="deleteSubjectButton" class="ghost-button" type="button">Delete card</button>
+          <button class="primary-button" type="submit">Save changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <template id="versionItemTemplate">
+    <div class="editor-item">
+      <div class="editor-item-main">
+        <input class="version-name" type="text">
+        <select class="version-quarter">
+          <option value="Q1">Q1</option>
+          <option value="Q2">Q2</option>
+          <option value="Q3">Q3</option>
+          <option value="Q4">Q4</option>
+        </select>
+      </div>
+      <button class="icon-button danger version-remove" type="button" aria-label="Delete version">×</button>
+    </div>
+  </template>
+
+  <template id="sectionItemTemplate">
+    <div class="editor-item">
+      <div class="editor-item-main editor-item-main-section">
+        <input class="section-name" type="text">
+        <input class="section-icon" type="text" maxlength="2" title="Icon or short label">
+        <input class="section-color" type="color">
+      </div>
+      <button class="icon-button danger section-remove" type="button" aria-label="Delete section">×</button>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
