@@ -235,7 +235,9 @@ input[type="color"] {
 
 .board-area {
   min-width: 0;
-  overflow: auto;
+  align-self: start;
+  overflow-x: auto;
+  overflow-y: visible;
   padding: 28px;
   position: relative;
 }
