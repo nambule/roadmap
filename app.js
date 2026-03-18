@@ -1,13 +1,14 @@
 const STORAGE_KEY = "roadmap-designer-state-v1";
 const PANEL_STORAGE_KEY = "roadmap-designer-panel-collapsed-v1";
-const COLUMNS_PER_VERSION = 4;
+const COLUMNS_PER_VERSION = 3;
+const DEFAULT_START_YEAR = 2026;
 
 const demoState = {
   company: "ADVENT CO.",
   title: "ENVISION 6.0",
   versions: [
-    { id: crypto.randomUUID(), name: "V1" },
-    { id: crypto.randomUUID(), name: "V2" }
+    { id: crypto.randomUUID(), name: "2026" },
+    { id: crypto.randomUUID(), name: "2027" }
   ],
   sections: [
     {
@@ -128,23 +129,41 @@ function saveState() {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function getDefaultYearLabel(index) {
+  return String(DEFAULT_START_YEAR + index);
+}
+
+function isYearLabel(value) {
+  return /^\d{4}$/.test(String(value || "").trim());
+}
+
+function isLegacyVersionLabel(value) {
+  return /^V\d+$/i.test(String(value || "").trim());
+}
+
 function normalizeState(inputState) {
   const nextState = structuredClone(inputState);
   const versionCount = Array.isArray(nextState.versions) ? nextState.versions.length : 0;
   const alreadyGrouped =
     Array.isArray(inputState.versions) &&
     inputState.versions.length > 0 &&
-    inputState.versions.every((version) => /^V\d+$/i.test(String(version.name || "").trim()));
+    inputState.versions.every((version) => isYearLabel(version.name) || isLegacyVersionLabel(version.name));
   const groupCount = alreadyGrouped
     ? Math.max(1, versionCount)
     : Math.max(1, Math.ceil(versionCount / COLUMNS_PER_VERSION));
 
   nextState.versions = Array.from({ length: groupCount }, (_, index) => {
     const existing = inputState.versions?.[index];
-    const isGroupedVersion = /^V\d+$/i.test(String(existing?.name || "").trim());
+    const existingName = String(existing?.name || "").trim();
+    const isGroupedVersion = isYearLabel(existingName) || isLegacyVersionLabel(existingName);
+    const legacyMatch = existingName.match(/^V(\d+)$/i);
     return {
       id: existing?.id || crypto.randomUUID(),
-      name: isGroupedVersion ? existing.name.toUpperCase() : `V${index + 1}`
+      name: isGroupedVersion
+        ? isYearLabel(existingName)
+          ? existingName
+          : getDefaultYearLabel(Math.max(0, Number(legacyMatch?.[1] || index + 1) - 1))
+        : getDefaultYearLabel(index)
     };
   });
 
@@ -170,7 +189,7 @@ function bindStaticEvents() {
     const nextIndex = state.versions.length;
     state.versions.push({
       id: crypto.randomUUID(),
-      name: `V${nextIndex + 1}`
+      name: getDefaultYearLabel(nextIndex)
     });
     clampSubjects();
     commit();
@@ -296,7 +315,7 @@ function renderVersionEditor() {
   versionList.innerHTML = "";
 
   if (!state.versions.length) {
-    versionList.innerHTML = `<div class="empty-state">Add at least one version to build the grid.</div>`;
+    versionList.innerHTML = `<div class="empty-state">Add at least one year to build the grid.</div>`;
     return;
   }
 
@@ -918,7 +937,7 @@ function buildExcelWorkbook() {
 
 function getVersionNameForColumn(columnIndex) {
   const versionIndex = Math.floor(columnIndex / COLUMNS_PER_VERSION);
-  return state.versions[versionIndex]?.name || `V${versionIndex + 1}`;
+  return state.versions[versionIndex]?.name || getDefaultYearLabel(versionIndex);
 }
 
 function getColumnReference(columnIndex) {
