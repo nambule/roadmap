@@ -418,6 +418,7 @@ input[type="color"] {
   grid-template-columns: repeat(var(--roadmap-column-count), var(--version-width));
   grid-template-rows: repeat(var(--lane-count), var(--row-height));
   gap: 0;
+  cursor: cell;
 }
 
 .section-track::before {
@@ -523,6 +524,34 @@ input[type="color"] {
   border: 1px dashed rgba(181, 95, 43, 0.7);
   background: rgba(181, 95, 43, 0.14);
   pointer-events: none;
+}
+
+.track-create-indicator {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  margin: 0;
+  border: 1px dashed rgba(181, 95, 43, 0.55);
+  background: rgba(181, 95, 43, 0.08);
+  color: rgba(123, 66, 25, 0.92);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.track-create-plus {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.94);
+  border: 1px solid rgba(181, 95, 43, 0.32);
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .subject-actions {

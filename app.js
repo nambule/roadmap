@@ -97,6 +97,7 @@ const subjectModal = document.querySelector("#subjectModal");
 const subjectModalBackdrop = document.querySelector("#subjectModalBackdrop");
 const closeSubjectModalButton = document.querySelector("#closeSubjectModalButton");
 const subjectModalForm = document.querySelector("#subjectModalForm");
+const subjectModalTitle = document.querySelector("#subjectModalTitle");
 const modalSubjectTitleInput = document.querySelector("#modalSubjectTitleInput");
 const modalSubjectSectionSelect = document.querySelector("#modalSubjectSectionSelect");
 const modalSubjectStartSelect = document.querySelector("#modalSubjectStartSelect");
@@ -104,14 +105,17 @@ const modalSubjectSpanInput = document.querySelector("#modalSubjectSpanInput");
 const modalSubjectRowInput = document.querySelector("#modalSubjectRowInput");
 const modalSubjectColorInput = document.querySelector("#modalSubjectColorInput");
 const deleteSubjectButton = document.querySelector("#deleteSubjectButton");
+const saveSubjectButton = subjectModalForm.querySelector('button[type="submit"]');
 const versionTemplate = document.querySelector("#versionItemTemplate");
 const sectionTemplate = document.querySelector("#sectionItemTemplate");
 
 let state = loadState();
 let draggedSubjectId = null;
 let currentDropPreview = null;
+let currentCreateIndicator = null;
 let isPanelCollapsed = loadPanelState();
 let editingSubjectId = null;
+let isCreatingSubject = false;
 let resizeSession = null;
 
 bindStaticEvents();
@@ -476,6 +480,9 @@ function renderBoard() {
     track.addEventListener("dragover", handleTrackDragOver);
     track.addEventListener("dragleave", handleTrackDragLeave);
     track.addEventListener("drop", handleTrackDrop);
+    track.addEventListener("pointermove", handleTrackPointerMove);
+    track.addEventListener("pointerleave", handleTrackPointerLeave);
+    track.addEventListener("click", handleTrackClick);
 
     state.subjects
       .filter((subject) => subject.sectionId === section.id)
@@ -575,6 +582,7 @@ function handleTrackDragLeave(event) {
   if (event.currentTarget.contains(event.relatedTarget)) {
     return;
   }
+  clearCreateIndicator(event.currentTarget);
   clearDropPreview(event.currentTarget);
 }
 
@@ -595,8 +603,39 @@ function handleTrackDrop(event) {
   subject.sectionId = sectionId;
   subject.row = placement.row;
   subject.start = placement.col;
+  clearCreateIndicator(track);
   clearDropPreview(track);
   commit();
+}
+
+function handleTrackPointerMove(event) {
+  if (event.target !== event.currentTarget || resizeSession || draggedSubjectId) {
+    clearCreateIndicator(event.currentTarget);
+    return;
+  }
+
+  const track = event.currentTarget;
+  const placement = getDropPlacement(track, event, 1);
+  renderCreateIndicator(track, placement);
+}
+
+function handleTrackPointerLeave(event) {
+  clearCreateIndicator(event.currentTarget);
+}
+
+function handleTrackClick(event) {
+  if (event.target !== event.currentTarget || resizeSession || draggedSubjectId) {
+    return;
+  }
+
+  const track = event.currentTarget;
+  const placement = getDropPlacement(track, event, 1);
+  clearCreateIndicator(track);
+  openNewSubjectEditor({
+    sectionId: track.dataset.sectionId,
+    start: placement.col,
+    row: placement.row
+  });
 }
 
 function getDropPlacement(track, event, span) {
@@ -642,6 +681,26 @@ function renderDropPreview(track, placement, color) {
   currentDropPreview = preview;
 }
 
+function renderCreateIndicator(track, placement) {
+  const styles = getComputedStyle(document.documentElement);
+  const versionWidth = parseFloat(styles.getPropertyValue("--version-width"));
+  const rowHeight = parseFloat(styles.getPropertyValue("--row-height"));
+
+  if (!currentCreateIndicator || currentCreateIndicator.parentElement !== track) {
+    clearCreateIndicator();
+    const indicator = document.createElement("div");
+    indicator.className = "track-create-indicator";
+    indicator.innerHTML = `<span class="track-create-plus">+</span><span>Add card</span>`;
+    track.appendChild(indicator);
+    currentCreateIndicator = indicator;
+  }
+
+  currentCreateIndicator.style.left = `${placement.col * versionWidth + 6}px`;
+  currentCreateIndicator.style.top = `${placement.row * rowHeight + 6}px`;
+  currentCreateIndicator.style.width = `${versionWidth - 12}px`;
+  currentCreateIndicator.style.height = `${rowHeight - 12}px`;
+}
+
 function clearDropPreview(track) {
   if (track) {
     track.classList.remove("track-active");
@@ -652,6 +711,17 @@ function clearDropPreview(track) {
   if (currentDropPreview) {
     currentDropPreview.remove();
     currentDropPreview = null;
+  }
+}
+
+function clearCreateIndicator(track) {
+  if (track && currentCreateIndicator && currentCreateIndicator.parentElement !== track) {
+    return;
+  }
+
+  if (currentCreateIndicator) {
+    currentCreateIndicator.remove();
+    currentCreateIndicator = null;
   }
 }
 
@@ -731,6 +801,7 @@ function openSubjectEditor(subjectId) {
     return;
   }
   editingSubjectId = subjectId;
+  isCreatingSubject = false;
   fillSectionOptions(modalSubjectSectionSelect);
   fillColumnOptions(modalSubjectStartSelect);
   modalSubjectTitleInput.value = subject.title;
@@ -740,6 +811,31 @@ function openSubjectEditor(subjectId) {
   syncModalSpanLimit();
   modalSubjectRowInput.value = String(subject.row);
   modalSubjectColorInput.value = subject.color;
+  subjectModalTitle.textContent = "Edit Roadmap Card";
+  saveSubjectButton.textContent = "Save changes";
+  deleteSubjectButton.hidden = false;
+  openSubjectModal();
+}
+
+function openNewSubjectEditor({ sectionId, start, row }) {
+  editingSubjectId = null;
+  isCreatingSubject = true;
+  fillSectionOptions(modalSubjectSectionSelect);
+  fillColumnOptions(modalSubjectStartSelect);
+  modalSubjectTitleInput.value = "";
+  modalSubjectSectionSelect.value = sectionId;
+  modalSubjectStartSelect.value = String(start);
+  modalSubjectSpanInput.value = "1";
+  syncModalSpanLimit();
+  modalSubjectRowInput.value = String(row);
+  modalSubjectColorInput.value = subjectColorInput.value || "#efc15f";
+  subjectModalTitle.textContent = "Create Roadmap Card";
+  saveSubjectButton.textContent = "Create card";
+  deleteSubjectButton.hidden = true;
+  openSubjectModal();
+}
+
+function openSubjectModal() {
   subjectModal.classList.add("is-open");
   subjectModal.setAttribute("aria-hidden", "false");
   modalSubjectTitleInput.focus();
@@ -747,6 +843,7 @@ function openSubjectEditor(subjectId) {
 
 function closeSubjectModal() {
   editingSubjectId = null;
+  isCreatingSubject = false;
   subjectModal.classList.remove("is-open");
   subjectModal.setAttribute("aria-hidden", "true");
 }
@@ -754,7 +851,7 @@ function closeSubjectModal() {
 function handleSubjectModalSubmit(event) {
   event.preventDefault();
   const subject = state.subjects.find((item) => item.id === editingSubjectId);
-  if (!subject) {
+  if (!subject && !isCreatingSubject) {
     closeSubjectModal();
     return;
   }
@@ -762,13 +859,29 @@ function handleSubjectModalSubmit(event) {
   const start = Number(modalSubjectStartSelect.value);
   const span = Math.max(1, Number(modalSubjectSpanInput.value) || 1);
   const boundedSpan = Math.min(span, getTotalColumns() - start);
+  const nextTitle = modalSubjectTitleInput.value.trim();
+  const nextSectionId = modalSubjectSectionSelect.value;
+  const nextRow = Math.max(0, Number(modalSubjectRowInput.value) || 0);
+  const nextColor = modalSubjectColorInput.value;
 
-  subject.title = modalSubjectTitleInput.value.trim() || subject.title;
-  subject.sectionId = modalSubjectSectionSelect.value;
-  subject.start = start;
-  subject.span = boundedSpan;
-  subject.row = Math.max(0, Number(modalSubjectRowInput.value) || 0);
-  subject.color = modalSubjectColorInput.value;
+  if (subject) {
+    subject.title = nextTitle || subject.title;
+    subject.sectionId = nextSectionId;
+    subject.start = start;
+    subject.span = boundedSpan;
+    subject.row = nextRow;
+    subject.color = nextColor;
+  } else {
+    state.subjects.push({
+      id: crypto.randomUUID(),
+      title: nextTitle || "NEW SUBJECT",
+      sectionId: nextSectionId,
+      start,
+      span: boundedSpan,
+      row: nextRow,
+      color: nextColor
+    });
+  }
 
   closeSubjectModal();
   commit();
