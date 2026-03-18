@@ -85,6 +85,9 @@ const addVersionButton = document.querySelector("#addVersionButton");
 const addSectionButton = document.querySelector("#addSectionButton");
 const addSubjectButton = document.querySelector("#addSubjectButton");
 const resetButton = document.querySelector("#resetButton");
+const exportDataButton = document.querySelector("#exportDataButton");
+const importDataButton = document.querySelector("#importDataButton");
+const importDataInput = document.querySelector("#importDataInput");
 const exportSvgButton = document.querySelector("#exportSvgButton");
 const exportExcelButton = document.querySelector("#exportExcelButton");
 const togglePanelButton = document.querySelector("#togglePanelButton");
@@ -211,6 +214,15 @@ function bindStaticEvents() {
     subjectTitleInput.focus();
   });
 
+  exportDataButton.addEventListener("click", exportRoadmapData);
+  importDataButton.addEventListener("click", () => {
+    const confirmed = window.confirm("Importing roadmap data will replace the current roadmap. Any unsaved changes will be erased. Continue?");
+    if (!confirmed) {
+      return;
+    }
+    importDataInput.click();
+  });
+  importDataInput.addEventListener("change", handleImportDataFile);
   exportSvgButton.addEventListener("click", exportSvg);
   exportExcelButton.addEventListener("click", exportExcel);
 
@@ -795,9 +807,67 @@ function exportSvg() {
   downloadFile(`${buildFilenameBase()}.svg`, svg, "image/svg+xml;charset=utf-8");
 }
 
+function exportRoadmapData() {
+  const payload = {
+    type: "roadmap-designer-document",
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    roadmap: structuredClone(state)
+  };
+  downloadFile(
+    `${buildFilenameBase()}.json`,
+    `${JSON.stringify(payload, null, 2)}\n`,
+    "application/json;charset=utf-8"
+  );
+}
+
+async function handleImportDataFile(event) {
+  const [file] = Array.from(event.target.files || []);
+  event.target.value = "";
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    const content = await file.text();
+    const imported = parseImportedRoadmap(content);
+    state = normalizeState(imported);
+    commit();
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : "Unable to import roadmap data.");
+  }
+}
+
 function exportExcel() {
   const workbook = buildExcelWorkbook();
   downloadFile(`${buildFilenameBase()}.xls`, workbook, "application/vnd.ms-excel;charset=utf-8");
+}
+
+function parseImportedRoadmap(content) {
+  let parsed;
+
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("The selected file is not valid JSON.");
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("The selected file does not contain roadmap data.");
+  }
+
+  const roadmap = parsed.type === "roadmap-designer-document" ? parsed.roadmap : parsed;
+
+  if (!roadmap || typeof roadmap !== "object") {
+    throw new Error("The selected file does not contain a valid roadmap payload.");
+  }
+
+  if (!Array.isArray(roadmap.sections) || !Array.isArray(roadmap.subjects) || !Array.isArray(roadmap.versions)) {
+    throw new Error("The selected file is missing roadmap sections, years, or subjects.");
+  }
+
+  return roadmap;
 }
 
 function buildRoadmapSvg() {
