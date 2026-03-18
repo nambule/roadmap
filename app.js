@@ -2,6 +2,8 @@ const STORAGE_KEY = "roadmap-designer-state-v1";
 const PANEL_STORAGE_KEY = "roadmap-designer-panel-collapsed-v1";
 const COLUMNS_PER_VERSION = 3;
 const DEFAULT_START_YEAR = 2026;
+const BODY_FONT_STACK = '"Avenir Next", "Segoe UI", sans-serif';
+const DISPLAY_FONT_STACK = '"Gill Sans", "Avenir Next Condensed", sans-serif';
 
 const demoState = {
   company: "ADVENT CO.",
@@ -857,12 +859,12 @@ function buildRoadmapSvg() {
 
     return `
       ${dividerTop}
-      <text x="${titleX + 36}" y="${labelY}" font-size="40" fill="${layout.section.color}" font-weight="700">${escapeXml(layout.section.icon || "✦")}</text>
+      <text class="svg-display-text" x="${titleX + 36}" y="${labelY}" font-size="40" fill="${layout.section.color}" font-weight="700">${escapeXml(layout.section.icon || "✦")}</text>
       ${layout.section.name
         .split("\n")
         .map(
           (line, lineIndex) => `
-        <text x="${titleX + 8}" y="${labelY + 44 + lineIndex * 26}" font-size="24" fill="#2b2b2b">${escapeXml(line)}</text>`
+        <text class="svg-display-text" x="${titleX + 8}" y="${labelY + 44 + lineIndex * 26}" font-size="24" fill="#2b2b2b">${escapeXml(line)}</text>`
         )
         .join("")}
       ${columns}
@@ -877,16 +879,20 @@ function buildRoadmapSvg() {
       return `
         <line x1="${x}" y1="112" x2="${x + w}" y2="112" stroke="#3e3a37" stroke-width="4" />
         <rect x="${x + w / 2 - 38}" y="92" width="76" height="40" rx="20" fill="#363636" />
-        <text x="${x + w / 2}" y="112" text-anchor="middle" dominant-baseline="middle" font-size="20" font-weight="700" fill="#ffffff">${escapeXml(version.name)}</text>
+        <text class="svg-display-text" x="${x + w / 2}" y="112" text-anchor="middle" dominant-baseline="middle" font-size="20" font-weight="700" fill="#ffffff">${escapeXml(version.name)}</text>
       `;
     })
     .join("");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <style>
+    text { font-family: ${BODY_FONT_STACK}; }
+    .svg-display-text { font-family: ${DISPLAY_FONT_STACK}; }
+  </style>
   <rect width="${width}" height="${height}" fill="#fffdf8" />
   <text x="${titleX}" y="42" font-size="22" fill="#6d6d6d">${escapeXml(state.company)}</text>
-  <text x="${titleX + 200}" y="42" font-size="22" fill="#2b2b2b" font-weight="700">${escapeXml(state.title)}</text>
+  <text class="svg-display-text" x="${titleX + 200}" y="42" font-size="22" fill="#2b2b2b" font-weight="700">${escapeXml(state.title)}</text>
   <text x="${titleX + 388}" y="42" font-size="22" fill="#6d6d6d">PRODUCT ROADMAP</text>
   ${header}
   ${sectionMarkup}
