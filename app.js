@@ -802,7 +802,7 @@ function exportExcel() {
 
 function buildRoadmapSvg() {
   const totalColumns = getTotalColumns();
-  const colWidth = 118;
+  const colWidth = 177;
   const labelWidth = 190;
   const rowHeight = 78;
   const sectionGap = 28;
@@ -829,6 +829,7 @@ function buildRoadmapSvg() {
     currentY += sectionTopPadding + laneHeight + sectionBottomPadding + sectionGap;
     const dividerTop = index === 0 ? "" : `<line x1="${titleX}" y1="${y}" x2="${titleX + boardWidth}" y2="${y}" stroke="#3e3a37" stroke-width="4" />`;
     const labelY = y + 26;
+    const labelCenterX = titleX + labelWidth / 2;
     const trackX = titleX + labelWidth;
     const trackY = y + sectionTopPadding;
     const columns = Array.from({ length: totalColumns }, (_, col) => {
@@ -859,12 +860,12 @@ function buildRoadmapSvg() {
 
     return `
       ${dividerTop}
-      <text class="svg-display-text" x="${titleX + 36}" y="${labelY}" font-size="40" fill="${layout.section.color}" font-weight="700">${escapeXml(layout.section.icon || "✦")}</text>
+      <text class="svg-display-text" x="${labelCenterX}" y="${labelY}" text-anchor="middle" font-size="40" fill="${layout.section.color}" font-weight="700">${escapeXml(layout.section.icon || "✦")}</text>
       ${layout.section.name
         .split("\n")
         .map(
           (line, lineIndex) => `
-        <text class="svg-display-text" x="${titleX + 8}" y="${labelY + 44 + lineIndex * 26}" font-size="24" fill="#2b2b2b">${escapeXml(line)}</text>`
+        <text class="svg-display-text" x="${labelCenterX}" y="${labelY + 44 + lineIndex * 26}" text-anchor="middle" font-size="24" fill="#2b2b2b">${escapeXml(line)}</text>`
         )
         .join("")}
       ${columns}

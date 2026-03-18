@@ -10,7 +10,7 @@
   --accent-soft: #f1d7b6;
   --shadow: 0 24px 60px rgba(47, 33, 12, 0.12);
   --grid-label-width: 190px;
-  --version-width: 118px;
+  --version-width: 177px;
   --row-height: 78px;
   --section-gap: 26px;
 }
@@ -386,6 +386,8 @@ input[type="color"] {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  align-items: center;
+  text-align: center;
 }
 
 .section-icon-badge {
@@ -405,6 +407,7 @@ input[type="color"] {
   line-height: 1;
   text-transform: uppercase;
   white-space: pre-line;
+  text-align: center;
 }
 
 .section-track {
