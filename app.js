@@ -84,7 +84,6 @@ const titleInput = document.querySelector("#titleInput");
 const addVersionButton = document.querySelector("#addVersionButton");
 const addSectionButton = document.querySelector("#addSectionButton");
 const addSubjectButton = document.querySelector("#addSubjectButton");
-const resetButton = document.querySelector("#resetButton");
 const exportDataButton = document.querySelector("#exportDataButton");
 const importDataButton = document.querySelector("#importDataButton");
 const importDataInput = document.querySelector("#importDataInput");
@@ -230,11 +229,6 @@ function bindStaticEvents() {
   exportSvgButton.addEventListener("click", exportSvg);
   exportExcelButton.addEventListener("click", exportExcel);
 
-  resetButton.addEventListener("click", () => {
-    state = structuredClone(demoState);
-    commit();
-  });
-
   companyInput.addEventListener("input", (event) => {
     state.company = event.target.value.toUpperCase();
     commit(false);
@@ -329,6 +323,24 @@ function renderPanelState() {
   showPanelButton.setAttribute("aria-expanded", String(!isPanelCollapsed));
 }
 
+function refreshDerivedUi() {
+  renderSubjectFormOptions();
+  if (subjectModal.classList.contains("is-open")) {
+    const currentSectionValue = modalSubjectSectionSelect.value;
+    const currentStartValue = modalSubjectStartSelect.value;
+    fillSectionOptions(modalSubjectSectionSelect);
+    fillColumnOptions(modalSubjectStartSelect);
+    if (state.sections.some((section) => section.id === currentSectionValue)) {
+      modalSubjectSectionSelect.value = currentSectionValue;
+    }
+    if (Number(currentStartValue) < getTotalColumns()) {
+      modalSubjectStartSelect.value = currentStartValue;
+    }
+    syncModalSpanLimit();
+  }
+  renderBoard();
+}
+
 function renderVersionEditor() {
   versionList.innerHTML = "";
 
@@ -346,7 +358,8 @@ function renderVersionEditor() {
 
     nameInput.addEventListener("input", (event) => {
       version.name = event.target.value.toUpperCase();
-      commit();
+      saveState();
+      refreshDerivedUi();
     });
 
     removeButton.addEventListener("click", () => {
@@ -382,17 +395,20 @@ function renderSectionEditor() {
 
     nameInput.addEventListener("input", (event) => {
       section.name = event.target.value.toUpperCase();
-      commit();
+      saveState();
+      refreshDerivedUi();
     });
 
     iconInput.addEventListener("input", (event) => {
       section.icon = event.target.value || "✦";
-      commit();
+      saveState();
+      renderBoard();
     });
 
     colorInput.addEventListener("input", (event) => {
       section.color = event.target.value;
-      commit();
+      saveState();
+      renderBoard();
     });
 
     removeButton.addEventListener("click", () => {
@@ -469,7 +485,7 @@ function renderBoard() {
     sectionNode.innerHTML = `
       <div class="section-grid" style="--roadmap-column-count:${totalColumns}; --lane-count:${getLaneCount(section.id)};">
         <div class="section-label">
-          <div class="section-icon-badge" style="color:${section.color}; border: 4px solid ${applyAlpha(section.color, 0.55)};">${escapeHtml(section.icon || "✦")}</div>
+          <div class="section-icon-badge${getSectionBadgeClassName(section.icon)}" style="color:${section.color}; border: 4px solid ${applyAlpha(section.color, 0.55)};">${escapeHtml(section.icon || "✦")}</div>
           <h3 class="section-name">${escapeHtml(section.name)}</h3>
         </div>
         <div class="section-track" data-section-id="${section.id}"></div>
@@ -545,6 +561,10 @@ function getVersionGroups() {
     span: COLUMNS_PER_VERSION,
     label: version.name
   }));
+}
+
+function getSectionBadgeClassName(value) {
+  return String(value || "").trim().length > 2 ? " section-icon-badge-text" : "";
 }
 
 function handleDragStart(event) {
