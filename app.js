@@ -382,16 +382,20 @@ function renderSectionEditor() {
     return;
   }
 
-  state.sections.forEach((section) => {
+  state.sections.forEach((section, index) => {
     const node = sectionTemplate.content.firstElementChild.cloneNode(true);
     const nameInput = node.querySelector(".section-name");
     const iconInput = node.querySelector(".section-icon");
     const colorInput = node.querySelector(".section-color");
+    const moveUpButton = node.querySelector(".section-move-up");
+    const moveDownButton = node.querySelector(".section-move-down");
     const removeButton = node.querySelector(".section-remove");
 
     nameInput.value = section.name;
     iconInput.value = section.icon;
     colorInput.value = section.color;
+    moveUpButton.disabled = index === 0;
+    moveDownButton.disabled = index === state.sections.length - 1;
 
     nameInput.addEventListener("input", (event) => {
       section.name = event.target.value.toUpperCase();
@@ -409,6 +413,14 @@ function renderSectionEditor() {
       section.color = event.target.value;
       saveState();
       renderBoard();
+    });
+
+    moveUpButton.addEventListener("click", () => {
+      moveSection(index, index - 1);
+    });
+
+    moveDownButton.addEventListener("click", () => {
+      moveSection(index, index + 1);
     });
 
     removeButton.addEventListener("click", () => {
@@ -448,6 +460,16 @@ function fillColumnOptions(selectNode) {
   }
 }
 
+function moveSection(fromIndex, toIndex) {
+  if (toIndex < 0 || toIndex >= state.sections.length || fromIndex === toIndex) {
+    return;
+  }
+
+  const [section] = state.sections.splice(fromIndex, 1);
+  state.sections.splice(toIndex, 0, section);
+  commit();
+}
+
 function renderBoard() {
   const versionCount = state.versions.length || 1;
   const totalColumns = getTotalColumns() || COLUMNS_PER_VERSION;
@@ -480,15 +502,16 @@ function renderBoard() {
   sections.className = "sections";
 
   state.sections.forEach((section) => {
+    const laneCount = getLaneCount(section.id);
     const sectionNode = document.createElement("section");
     sectionNode.className = "section";
     sectionNode.innerHTML = `
-      <div class="section-grid" style="--roadmap-column-count:${totalColumns}; --lane-count:${getLaneCount(section.id)};">
+      <div class="section-grid" style="--roadmap-column-count:${totalColumns}; --lane-count:${laneCount};">
         <div class="section-label">
           <div class="section-icon-badge${getSectionBadgeClassName(section.icon)}" style="color:${section.color}; border: 4px solid ${applyAlpha(section.color, 0.55)};">${escapeHtml(section.icon || "✦")}</div>
           <h3 class="section-name">${escapeHtml(section.name)}</h3>
         </div>
-        <div class="section-track" data-section-id="${section.id}"></div>
+        <div class="section-track${laneCount === 0 ? " section-track-empty" : ""}" data-section-id="${section.id}"></div>
       </div>
     `;
 
@@ -552,7 +575,7 @@ function getLaneCount(sectionId) {
   const rows = state.subjects
     .filter((subject) => subject.sectionId === sectionId)
     .map((subject) => subject.row);
-  return Math.max(3, ...rows.map((row) => row + 1));
+  return rows.length ? Math.max(...rows.map((row) => row + 1)) : 0;
 }
 
 function getVersionGroups() {

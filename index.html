@@ -10,7 +10,7 @@
   <div class="app-shell">
     <aside class="control-panel" id="controlPanel">
       <div class="panel-topbar">
-        <button id="togglePanelButton" class="icon-button panel-toggle" type="button" aria-expanded="true" aria-controls="controlPanel" title="Collapse editor">←</button>
+        <button id="togglePanelButton" class="icon-button panel-toggle" type="button" aria-expanded="true" aria-controls="controlPanel" title="Collapse editor">&larr;</button>
       </div>
       <div>
         <p class="eyebrow">Roadmap Editor</p>
@@ -116,7 +116,7 @@
           <p class="eyebrow">Card Editor</p>
           <h2 id="subjectModalTitle">Edit Roadmap Card</h2>
         </div>
-        <button id="closeSubjectModalButton" class="icon-button" type="button" aria-label="Close editor">×</button>
+        <button id="closeSubjectModalButton" class="icon-button" type="button" aria-label="Close editor">&times;</button>
       </div>
 
       <form id="subjectModalForm" class="subject-form modal-form">
@@ -161,18 +161,22 @@
       <div class="editor-item-main">
         <input class="version-name" type="text">
       </div>
-      <button class="icon-button danger version-remove" type="button" aria-label="Delete version">×</button>
+      <button class="icon-button danger version-remove" type="button" aria-label="Delete version">&times;</button>
     </div>
   </template>
 
   <template id="sectionItemTemplate">
-    <div class="editor-item">
-      <div class="editor-item-main editor-item-main-section">
-        <input class="section-name" type="text">
+    <div class="editor-item section-editor-item">
+      <input class="section-name" type="text">
+      <div class="section-editor-meta">
         <input class="section-icon" type="text" title="Icon or short label">
         <input class="section-color" type="color">
+        <div class="section-order-buttons">
+          <button class="icon-button section-move-up" type="button" aria-label="Move section up">^</button>
+          <button class="icon-button section-move-down" type="button" aria-label="Move section down">v</button>
+        </div>
+        <button class="icon-button danger section-remove" type="button" aria-label="Delete section">&times;</button>
       </div>
-      <button class="icon-button danger section-remove" type="button" aria-label="Delete section">×</button>
     </div>
   </template>
 
