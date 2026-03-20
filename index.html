@@ -148,6 +148,14 @@
             <input id="modalSubjectColorInput" type="color" value="#efc15f">
           </label>
         </div>
+        <section class="subitems-editor">
+          <div class="panel-header subitems-header">
+            <h2>Sub-items</h2>
+            <button id="addSubitemButton" class="ghost-button" type="button">Add sub-item</button>
+          </div>
+          <p class="subitems-copy">Sub-items use columns relative to this top-level card.</p>
+          <div id="subitemList" class="subitem-list"></div>
+        </section>
         <div class="modal-actions">
           <button id="deleteSubjectButton" class="ghost-button" type="button">Delete card</button>
           <button class="primary-button" type="submit">Save changes</button>
@@ -177,6 +185,26 @@
         </div>
         <button class="icon-button danger section-remove" type="button" aria-label="Delete section">&times;</button>
       </div>
+    </div>
+  </template>
+
+  <template id="subitemItemTemplate">
+    <div class="subitem-item">
+      <div class="subitem-grid">
+        <label class="field">
+          <span>Name</span>
+          <input class="subitem-title" type="text" placeholder="Sub-item">
+        </label>
+        <label class="field">
+          <span>Start</span>
+          <select class="subitem-start"></select>
+        </label>
+        <label class="field">
+          <span>Length</span>
+          <input class="subitem-span" type="number" min="1" value="1">
+        </label>
+      </div>
+      <button class="icon-button danger subitem-remove" type="button" aria-label="Delete sub-item">&times;</button>
     </div>
   </template>
 

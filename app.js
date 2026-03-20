@@ -103,10 +103,13 @@ const modalSubjectStartSelect = document.querySelector("#modalSubjectStartSelect
 const modalSubjectSpanInput = document.querySelector("#modalSubjectSpanInput");
 const modalSubjectRowInput = document.querySelector("#modalSubjectRowInput");
 const modalSubjectColorInput = document.querySelector("#modalSubjectColorInput");
+const addSubitemButton = document.querySelector("#addSubitemButton");
+const subitemList = document.querySelector("#subitemList");
 const deleteSubjectButton = document.querySelector("#deleteSubjectButton");
 const saveSubjectButton = subjectModalForm.querySelector('button[type="submit"]');
 const versionTemplate = document.querySelector("#versionItemTemplate");
 const sectionTemplate = document.querySelector("#sectionItemTemplate");
+const subitemTemplate = document.querySelector("#subitemItemTemplate");
 
 let state = loadState();
 let draggedSubjectId = null;
@@ -116,6 +119,7 @@ let isPanelCollapsed = loadPanelState();
 let editingSubjectId = null;
 let isCreatingSubject = false;
 let resizeSession = null;
+let modalSubitemsDraft = [];
 
 bindStaticEvents();
 render();
@@ -175,6 +179,19 @@ function normalizeState(inputState) {
     };
   });
 
+  nextState.subjects = Array.isArray(nextState.subjects)
+    ? nextState.subjects.map((subject) => ({
+        id: subject?.id || crypto.randomUUID(),
+        title: String(subject?.title || "NEW SUBJECT"),
+        sectionId: String(subject?.sectionId || ""),
+        start: Number(subject?.start) || 0,
+        span: Number(subject?.span) || 1,
+        row: Number(subject?.row) || 0,
+        color: subject?.color || "#efc15f",
+        parentId: subject?.parentId ? String(subject.parentId) : null
+      }))
+    : [];
+
   return nextState;
 }
 
@@ -192,6 +209,8 @@ function bindStaticEvents() {
   deleteSubjectButton.addEventListener("click", handleDeleteSubject);
   document.addEventListener("keydown", handleGlobalKeydown);
   modalSubjectStartSelect.addEventListener("change", syncModalSpanLimit);
+  modalSubjectSpanInput.addEventListener("input", renderSubitemEditor);
+  addSubitemButton.addEventListener("click", handleAddSubitem);
 
   addVersionButton.addEventListener("click", () => {
     const nextIndex = state.versions.length;
@@ -279,13 +298,18 @@ function commit(shouldRender = true) {
 function clampSubjects() {
   const totalColumns = getTotalColumns();
   const maxIndex = Math.max(0, totalColumns - 1);
+  const subjectIds = new Set(state.subjects.map((subject) => subject.id));
   state.subjects = state.subjects
     .filter((subject) => state.sections.some((section) => section.id === subject.sectionId))
     .map((subject) => {
-      const start = Math.min(subject.start, maxIndex);
-      const remaining = totalColumns - start;
+      const parent = subject.parentId ? state.subjects.find((item) => item.id === subject.parentId) : null;
+      const availableColumns = parent ? Math.max(1, parent.span) : totalColumns;
+      const availableIndex = Math.max(0, availableColumns - 1);
+      const start = Math.min(subject.start, parent ? availableIndex : maxIndex);
+      const remaining = availableColumns - start;
       return {
         ...subject,
+        parentId: subject.parentId && subjectIds.has(subject.parentId) ? subject.parentId : null,
         start,
         row: Math.max(0, subject.row || 0),
         span: Math.max(1, Math.min(subject.span || 1, remaining))
@@ -337,6 +361,7 @@ function refreshDerivedUi() {
       modalSubjectStartSelect.value = currentStartValue;
     }
     syncModalSpanLimit();
+    renderSubitemEditor();
   }
   renderBoard();
 }
@@ -524,7 +549,7 @@ function renderBoard() {
     track.addEventListener("click", handleTrackClick);
 
     state.subjects
-      .filter((subject) => subject.sectionId === section.id)
+      .filter((subject) => subject.sectionId === section.id && !subject.parentId)
       .forEach((subject) => {
         const card = document.createElement("article");
         card.className = "subject-card";
@@ -533,14 +558,33 @@ function renderBoard() {
         card.style.background = subject.color;
         card.style.gridColumn = `${subject.start + 1} / span ${subject.span}`;
         card.style.gridRow = `${subject.row + 1}`;
+        card.style.color = getReadableCardTextColor(subject.color);
+        const subitems = getChildSubjects(subject.id);
         card.innerHTML = `
-          <span>${escapeHtml(subject.title)}</span>
+          <div class="subject-card-body">
+            <div class="subject-card-title">${escapeHtml(subject.title)}</div>
+            ${subitems.length ? `<div class="subitem-board-grid" style="--subitem-column-count:${Math.max(1, subject.span)};"></div>` : ""}
+          </div>
           <button class="subject-resize-handle" type="button" title="Resize subject" aria-label="Resize subject"></button>
           <div class="subject-actions">
             <button class="subject-action" type="button" data-action="edit" title="Edit subject">✎</button>
             <button class="subject-action" type="button" data-action="delete" title="Delete subject">×</button>
           </div>
         `;
+
+        const subitemGrid = card.querySelector(".subitem-board-grid");
+        if (subitemGrid) {
+          subitems.forEach((subitem) => {
+            const subitemNode = document.createElement("div");
+            subitemNode.className = "subitem-board-card";
+            subitemNode.style.gridColumn = `${subitem.start + 1} / span ${subitem.span}`;
+            subitemNode.style.background = buildSubitemSurface(subject.color);
+            subitemNode.style.borderColor = applyAlpha(subject.color, 0.92);
+            subitemNode.style.color = getReadableCardTextColor(subject.color);
+            subitemNode.innerHTML = `<span>${escapeHtml(subitem.title)}</span>`;
+            subitemGrid.appendChild(subitemNode);
+          });
+        }
 
         const resizeHandle = card.querySelector(".subject-resize-handle");
         resizeHandle.addEventListener("pointerdown", (event) => handleResizeStart(event, subject.id));
@@ -553,7 +597,7 @@ function renderBoard() {
           }
           event.stopPropagation();
           if (action === "delete") {
-            state.subjects = state.subjects.filter((item) => item.id !== subject.id);
+            state.subjects = state.subjects.filter((item) => item.id !== subject.id && item.parentId !== subject.id);
             commit();
             return;
           }
@@ -573,9 +617,23 @@ function renderBoard() {
 
 function getLaneCount(sectionId) {
   const rows = state.subjects
-    .filter((subject) => subject.sectionId === sectionId)
+    .filter((subject) => subject.sectionId === sectionId && !subject.parentId)
     .map((subject) => subject.row);
   return rows.length ? Math.max(...rows.map((row) => row + 1)) : 0;
+}
+
+function getChildSubjects(parentId) {
+  return state.subjects.filter((subject) => subject.parentId === parentId);
+}
+
+function getReadableCardTextColor(color) {
+  const hex = color.replace("#", "");
+  const expanded = hex.length === 3 ? hex.split("").map((char) => char + char).join("") : hex;
+  const red = parseInt(expanded.slice(0, 2), 16);
+  const green = parseInt(expanded.slice(2, 4), 16);
+  const blue = parseInt(expanded.slice(4, 6), 16);
+  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+  return luminance > 0.64 ? "rgba(48, 37, 20, 0.9)" : "rgba(255, 251, 242, 0.96)";
 }
 
 function getVersionGroups() {
@@ -854,9 +912,11 @@ function openSubjectEditor(subjectId) {
   syncModalSpanLimit();
   modalSubjectRowInput.value = String(subject.row);
   modalSubjectColorInput.value = subject.color;
+  modalSubitemsDraft = getChildSubjects(subject.id).map((subitem) => ({ ...structuredClone(subitem) }));
   subjectModalTitle.textContent = "Edit Roadmap Card";
   saveSubjectButton.textContent = "Save changes";
   deleteSubjectButton.hidden = false;
+  renderSubitemEditor();
   openSubjectModal();
 }
 
@@ -872,9 +932,11 @@ function openNewSubjectEditor({ sectionId, start, row }) {
   syncModalSpanLimit();
   modalSubjectRowInput.value = String(row);
   modalSubjectColorInput.value = subjectColorInput.value || "#efc15f";
+  modalSubitemsDraft = [];
   subjectModalTitle.textContent = "Create Roadmap Card";
   saveSubjectButton.textContent = "Create card";
   deleteSubjectButton.hidden = true;
+  renderSubitemEditor();
   openSubjectModal();
 }
 
@@ -887,6 +949,7 @@ function openSubjectModal() {
 function closeSubjectModal() {
   editingSubjectId = null;
   isCreatingSubject = false;
+  modalSubitemsDraft = [];
   subjectModal.classList.remove("is-open");
   subjectModal.setAttribute("aria-hidden", "true");
 }
@@ -906,6 +969,7 @@ function handleSubjectModalSubmit(event) {
   const nextSectionId = modalSubjectSectionSelect.value;
   const nextRow = Math.max(0, Number(modalSubjectRowInput.value) || 0);
   const nextColor = modalSubjectColorInput.value;
+  const subitems = normalizeModalSubitems(boundedSpan, nextSectionId);
 
   if (subject) {
     subject.title = nextTitle || subject.title;
@@ -914,15 +978,29 @@ function handleSubjectModalSubmit(event) {
     subject.span = boundedSpan;
     subject.row = nextRow;
     subject.color = nextColor;
+    state.subjects = state.subjects.filter((item) => item.parentId !== subject.id);
+    subitems.forEach((subitem) => {
+      state.subjects.push({
+        ...subitem,
+        parentId: subject.id
+      });
+    });
   } else {
+    const newId = crypto.randomUUID();
     state.subjects.push({
-      id: crypto.randomUUID(),
+      id: newId,
       title: nextTitle || "NEW SUBJECT",
       sectionId: nextSectionId,
       start,
       span: boundedSpan,
       row: nextRow,
       color: nextColor
+    });
+    subitems.forEach((subitem) => {
+      state.subjects.push({
+        ...subitem,
+        parentId: newId
+      });
     });
   }
 
@@ -934,7 +1012,7 @@ function handleDeleteSubject() {
   if (!editingSubjectId) {
     return;
   }
-  state.subjects = state.subjects.filter((item) => item.id !== editingSubjectId);
+  state.subjects = state.subjects.filter((item) => item.id !== editingSubjectId && item.parentId !== editingSubjectId);
   closeSubjectModal();
   commit();
 }
@@ -952,6 +1030,109 @@ function syncModalSpanLimit() {
   if (Number(modalSubjectSpanInput.value) > maxSpan) {
     modalSubjectSpanInput.value = String(maxSpan);
   }
+  renderSubitemEditor();
+}
+
+function handleAddSubitem() {
+  modalSubitemsDraft.push({
+    id: crypto.randomUUID(),
+    title: "",
+    start: 0,
+    span: 1
+  });
+  renderSubitemEditor();
+}
+
+function renderSubitemEditor() {
+  subitemList.innerHTML = "";
+  const parentSpan = Math.max(1, Number(modalSubjectSpanInput.value) || 1);
+
+  if (!modalSubitemsDraft.length) {
+    subitemList.innerHTML = `<div class="empty-state">No sub-items yet. Add one to break this card into smaller steps.</div>`;
+    return;
+  }
+
+  modalSubitemsDraft.forEach((subitem, index) => {
+    const node = subitemTemplate.content.firstElementChild.cloneNode(true);
+    const titleInput = node.querySelector(".subitem-title");
+    const startSelect = node.querySelector(".subitem-start");
+    const spanInput = node.querySelector(".subitem-span");
+    const removeButton = node.querySelector(".subitem-remove");
+
+    fillRelativeColumnOptions(startSelect, parentSpan);
+    titleInput.value = subitem.title;
+    startSelect.value = String(Math.min(subitem.start || 0, parentSpan - 1));
+    spanInput.max = String(Math.max(1, parentSpan - Number(startSelect.value)));
+    spanInput.value = String(Math.min(Math.max(1, subitem.span || 1), Number(spanInput.max)));
+
+    titleInput.addEventListener("input", (event) => {
+      modalSubitemsDraft[index].title = event.target.value;
+    });
+
+    startSelect.addEventListener("change", (event) => {
+      const nextStart = Number(event.target.value) || 0;
+      modalSubitemsDraft[index].start = nextStart;
+      const maxSpan = Math.max(1, parentSpan - nextStart);
+      modalSubitemsDraft[index].span = Math.min(Math.max(1, modalSubitemsDraft[index].span || 1), maxSpan);
+      renderSubitemEditor();
+    });
+
+    spanInput.addEventListener("input", (event) => {
+      const maxSpan = Math.max(1, parentSpan - (modalSubitemsDraft[index].start || 0));
+      modalSubitemsDraft[index].span = Math.min(Math.max(1, Number(event.target.value) || 1), maxSpan);
+      event.target.value = String(modalSubitemsDraft[index].span);
+    });
+
+    removeButton.addEventListener("click", () => {
+      modalSubitemsDraft.splice(index, 1);
+      renderSubitemEditor();
+    });
+
+    subitemList.appendChild(node);
+  });
+}
+
+function fillRelativeColumnOptions(selectNode, count) {
+  const currentValue = selectNode.value;
+  selectNode.innerHTML = "";
+  for (let index = 0; index < count; index += 1) {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = `Column ${index + 1}`;
+    selectNode.appendChild(option);
+  }
+  if (Array.from(selectNode.options).some((option) => option.value === currentValue)) {
+    selectNode.value = currentValue;
+  }
+}
+
+function normalizeModalSubitems(parentSpan, sectionId) {
+  return modalSubitemsDraft.map((subitem) => {
+    const safeStart = Math.min(Math.max(0, Number(subitem.start) || 0), Math.max(0, parentSpan - 1));
+    const maxSpan = Math.max(1, parentSpan - safeStart);
+    return {
+      id: subitem.id || crypto.randomUUID(),
+      title: String(subitem.title || "NEW SUB-ITEM").trim() || "NEW SUB-ITEM",
+      sectionId,
+      start: safeStart,
+      span: Math.min(Math.max(1, Number(subitem.span) || 1), maxSpan),
+      row: 0
+    };
+  });
+}
+
+function buildSubitemSurface(parentColor) {
+  return `linear-gradient(180deg, ${mixWithWhite(parentColor, 0.84)} 0%, ${mixWithWhite(parentColor, 0.72)} 100%)`;
+}
+
+function mixWithWhite(hexColor, amount) {
+  const hex = hexColor.replace("#", "");
+  const expanded = hex.length === 3 ? hex.split("").map((char) => char + char).join("") : hex;
+  const red = parseInt(expanded.slice(0, 2), 16);
+  const green = parseInt(expanded.slice(2, 4), 16);
+  const blue = parseInt(expanded.slice(4, 6), 16);
+  const mix = (channel) => Math.round(channel + (255 - channel) * amount);
+  return `rgb(${mix(red)}, ${mix(green)}, ${mix(blue)})`;
 }
 
 function getTotalColumns() {
@@ -1040,7 +1221,7 @@ function buildRoadmapSvg() {
   const sectionLayouts = state.sections.map((section) => ({
     section,
     lanes: getLaneCount(section.id),
-    subjects: state.subjects.filter((subject) => subject.sectionId === section.id)
+    subjects: state.subjects.filter((subject) => subject.sectionId === section.id && !subject.parentId)
   }));
   const sectionsHeight = sectionLayouts.reduce((sum, layout) => {
     return sum + sectionTopPadding + layout.lanes * rowHeight + sectionBottomPadding + sectionGap;
@@ -1131,15 +1312,17 @@ function buildExcelWorkbook() {
   rows.push(["Company", state.company]);
   rows.push(["Title", state.title]);
   rows.push([]);
-  rows.push(["Version", "Section", "Subject", "Start", "Length", "Row", "Color"]);
+  rows.push(["Version", "Section", "Parent", "Subject", "Start", "Length", "Row", "Color"]);
   state.subjects.forEach((subject) => {
+    const parent = subject.parentId ? state.subjects.find((item) => item.id === subject.parentId) : null;
     rows.push([
-      getVersionNameForColumn(subject.start),
+      parent ? "" : getVersionNameForColumn(subject.start),
       getSectionName(subject.sectionId),
+      parent?.title.replace(/\n/g, " ") || "",
       subject.title.replace(/\n/g, " "),
-      getColumnReference(subject.start),
+      parent ? `Column ${subject.start + 1}` : getColumnReference(subject.start),
       String(subject.span),
-      String(subject.row + 1),
+      parent ? "" : String(subject.row + 1),
       subject.color
     ]);
   });
