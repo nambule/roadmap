@@ -578,6 +578,7 @@ function renderBoard() {
             const subitemNode = document.createElement("div");
             subitemNode.className = "subitem-board-card";
             subitemNode.style.gridColumn = `${subitem.start + 1} / span ${subitem.span}`;
+            subitemNode.style.gridRow = `${Math.max(0, subitem.row || 0) + 1}`;
             subitemNode.style.background = buildSubitemSurface(subject.color);
             subitemNode.style.borderColor = applyAlpha(subject.color, 0.92);
             subitemNode.style.color = "var(--ink)";
@@ -623,7 +624,19 @@ function getLaneCount(sectionId) {
 }
 
 function getChildSubjects(parentId) {
-  return state.subjects.filter((subject) => subject.parentId === parentId);
+  return state.subjects
+    .filter((subject) => subject.parentId === parentId)
+    .sort((left, right) => {
+      const rowDelta = (left.row || 0) - (right.row || 0);
+      if (rowDelta !== 0) {
+        return rowDelta;
+      }
+      const startDelta = (left.start || 0) - (right.start || 0);
+      if (startDelta !== 0) {
+        return startDelta;
+      }
+      return String(left.title || "").localeCompare(String(right.title || ""));
+    });
 }
 
 function getReadableCardTextColor(color) {
@@ -1037,6 +1050,7 @@ function handleAddSubitem() {
   modalSubitemsDraft.push({
     id: crypto.randomUUID(),
     title: "",
+    row: 0,
     start: 0,
     span: 1
   });
@@ -1055,18 +1069,26 @@ function renderSubitemEditor() {
   modalSubitemsDraft.forEach((subitem, index) => {
     const node = subitemTemplate.content.firstElementChild.cloneNode(true);
     const titleInput = node.querySelector(".subitem-title");
+    const rowInput = node.querySelector(".subitem-row");
     const startSelect = node.querySelector(".subitem-start");
     const spanInput = node.querySelector(".subitem-span");
     const removeButton = node.querySelector(".subitem-remove");
 
     fillRelativeColumnOptions(startSelect, parentSpan);
     titleInput.value = subitem.title;
+    rowInput.value = String(Math.max(1, Number(subitem.row) + 1 || 1));
     startSelect.value = String(Math.min(subitem.start || 0, parentSpan - 1));
     spanInput.max = String(Math.max(1, parentSpan - Number(startSelect.value)));
     spanInput.value = String(Math.min(Math.max(1, subitem.span || 1), Number(spanInput.max)));
 
     titleInput.addEventListener("input", (event) => {
       modalSubitemsDraft[index].title = event.target.value;
+    });
+
+    rowInput.addEventListener("input", (event) => {
+      const nextRow = Math.max(1, Number(event.target.value) || 1);
+      modalSubitemsDraft[index].row = nextRow - 1;
+      event.target.value = String(nextRow);
     });
 
     startSelect.addEventListener("change", (event) => {
@@ -1116,7 +1138,7 @@ function normalizeModalSubitems(parentSpan, sectionId) {
       sectionId,
       start: safeStart,
       span: Math.min(Math.max(1, Number(subitem.span) || 1), maxSpan),
-      row: 0
+      row: Math.max(0, Number(subitem.row) || 0)
     };
   });
 }
@@ -1421,7 +1443,7 @@ function layoutSubitemsForExport(subitems, columnCount) {
   subitems.forEach((subitem) => {
     const start = Math.max(0, Math.min(columnCount - 1, Number(subitem.start) || 0));
     const span = Math.max(1, Math.min(columnCount - start, Number(subitem.span) || 1));
-    let rowIndex = 0;
+    let rowIndex = Math.max(0, Number(subitem.row) || 0);
 
     while (true) {
       if (!rows[rowIndex]) {

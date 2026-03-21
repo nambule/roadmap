@@ -806,7 +806,7 @@ input[type="color"] {
 
 .subitem-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) 110px 110px;
+  grid-template-columns: minmax(0, 1.8fr) 88px 110px 110px;
   gap: 10px;
 }
 
