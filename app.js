@@ -4,6 +4,19 @@ const COLUMNS_PER_VERSION = 3;
 const DEFAULT_START_YEAR = 2026;
 const BODY_FONT_STACK = '"Avenir Next", "Segoe UI", sans-serif';
 const DISPLAY_FONT_STACK = '"Gill Sans", "Avenir Next Condensed", sans-serif';
+const DEFAULT_SECTION_PICTO = "▣";
+const SECTION_PICTO_OPTIONS = [
+  { value: "▣", label: "▣" },
+  { value: "▤", label: "▤" },
+  { value: "◔", label: "◔" },
+  { value: "◇", label: "◇" },
+  { value: "◎", label: "◎" },
+  { value: "◫", label: "◫" },
+  { value: "◩", label: "◩" },
+  { value: "◧", label: "◧" },
+  { value: "◌", label: "◌" },
+  { value: "⬡", label: "⬡" }
+];
 
 const demoState = {
   company: "ADVENT CO.",
@@ -16,7 +29,7 @@ const demoState = {
     {
       id: crypto.randomUUID(),
       name: "WEB TEAM",
-      icon: "▣",
+      icon: DEFAULT_SECTION_PICTO,
       color: "#e8b54f"
     },
     {
@@ -226,7 +239,7 @@ function bindStaticEvents() {
     state.sections.push({
       id: crypto.randomUUID(),
       name: `NEW SECTION ${state.sections.length + 1}`,
-      icon: "✦",
+      icon: DEFAULT_SECTION_PICTO,
       color: "#d6b374"
     });
     commit();
@@ -417,7 +430,7 @@ function renderSectionEditor() {
     const removeButton = node.querySelector(".section-remove");
 
     nameInput.value = section.name;
-    iconInput.value = section.icon;
+    fillSectionPictoOptions(iconInput, section.icon);
     colorInput.value = section.color;
     moveUpButton.disabled = index === 0;
     moveDownButton.disabled = index === state.sections.length - 1;
@@ -429,7 +442,7 @@ function renderSectionEditor() {
     });
 
     iconInput.addEventListener("input", (event) => {
-      section.icon = event.target.value || "✦";
+      section.icon = event.target.value || DEFAULT_SECTION_PICTO;
       saveState();
       renderBoard();
     });
@@ -473,6 +486,27 @@ function fillSectionOptions(selectNode) {
     option.textContent = section.name.replace(/\n/g, " ");
     selectNode.appendChild(option);
   });
+}
+
+function fillSectionPictoOptions(selectNode, currentValue) {
+  const nextValue = String(currentValue || DEFAULT_SECTION_PICTO).trim() || DEFAULT_SECTION_PICTO;
+  selectNode.innerHTML = "";
+
+  SECTION_PICTO_OPTIONS.forEach((picto) => {
+    const option = document.createElement("option");
+    option.value = picto.value;
+    option.textContent = picto.label;
+    selectNode.appendChild(option);
+  });
+
+  if (!SECTION_PICTO_OPTIONS.some((picto) => picto.value === nextValue)) {
+    const customOption = document.createElement("option");
+    customOption.value = nextValue;
+    customOption.textContent = nextValue;
+    selectNode.appendChild(customOption);
+  }
+
+  selectNode.value = nextValue;
 }
 
 function fillColumnOptions(selectNode) {
@@ -1257,7 +1291,7 @@ function buildRoadmapSvg() {
     const laneHeight = layout.lanes * rowHeight;
     currentY += sectionTopPadding + laneHeight + sectionBottomPadding + sectionGap;
     const dividerTop = index === 0 ? "" : `<line x1="${titleX}" y1="${y}" x2="${titleX + boardWidth}" y2="${y}" stroke="#3e3a37" stroke-width="4" />`;
-    const labelY = y + 26;
+    const labelY = y + 44;
     const labelCenterX = titleX + labelWidth / 2;
     const trackX = titleX + labelWidth;
     const trackY = y + sectionTopPadding;
@@ -1342,7 +1376,7 @@ function buildRoadmapSvg() {
         .split("\n")
         .map(
           (line, lineIndex) => `
-        <text class="svg-display-text" x="${labelCenterX}" y="${labelY + 44 + lineIndex * 26}" text-anchor="middle" font-size="24" fill="#2b2b2b">${escapeXml(line)}</text>`
+        <text class="svg-display-text" x="${labelCenterX}" y="${labelY + 38 + lineIndex * 26}" text-anchor="middle" font-size="24" fill="#2b2b2b">${escapeXml(line)}</text>`
         )
         .join("")}
       ${columns}
