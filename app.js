@@ -1211,7 +1211,7 @@ function buildRoadmapSvg() {
   const totalColumns = getTotalColumns();
   const colWidth = 177;
   const labelWidth = 190;
-  const rowHeight = 78;
+  const rowHeight = 126;
   const sectionGap = 28;
   const headerHeight = 96;
   const sectionTopPadding = 18;
@@ -1250,18 +1250,66 @@ function buildRoadmapSvg() {
       const yCard = trackY + subject.row * rowHeight + 6;
       const w = subject.span * colWidth - 12;
       const h = rowHeight - 12;
-      const lines = wrapText(subject.title, Math.max(1, Math.floor((w - 18) / 8)), 3);
-      const textY = yCard + h / 2 - ((lines.length - 1) * 14) / 2;
-      return `
-        <rect x="${x}" y="${yCard}" width="${w}" height="${h}" fill="${subject.color}" />
-        ${lines
+      const subitems = getChildSubjects(subject.id);
+      const hasSubitems = subitems.length > 0;
+      const cardTextColor = getReadableCardTextColor(subject.color);
+      const cardPaddingX = 14;
+      const titleLines = wrapText(subject.title, Math.max(1, Math.floor((w - cardPaddingX * 2 - 6) / 8)), 3);
+      const titleLineHeight = 14;
+      const titleBlockHeight = titleLines.length * titleLineHeight;
+      const subitemGap = hasSubitems ? 10 : 0;
+      const subitemHeight = hasSubitems ? 20 : 0;
+      const subitemRowGap = hasSubitems ? 8 : 0;
+      const subitemLayout = hasSubitems ? layoutSubitemsForExport(subitems, Math.max(1, subject.span)) : null;
+      const subitemAreaHeight = hasSubitems
+        ? subitemLayout.rowCount * subitemHeight + Math.max(0, subitemLayout.rowCount - 1) * subitemRowGap
+        : 0;
+      const contentHeight = titleBlockHeight + subitemGap + subitemAreaHeight;
+      const contentTop = yCard + Math.max(10, (h - contentHeight) / 2);
+      const titleY = contentTop + titleLineHeight / 2;
+      const subitemY = contentTop + titleBlockHeight + subitemGap;
+      const subitemMarkup = hasSubitems
+        ? subitemLayout.placements
+            .map(({ subitem, start, span, row }) => {
+              const subitemColumnCount = Math.max(1, subject.span);
+              const subitemGridGap = 8;
+              const subitemGridX = x + cardPaddingX;
+              const subitemGridWidth = Math.max(24, w - cardPaddingX * 2);
+              const subitemColumnWidth =
+                (subitemGridWidth - subitemGridGap * (subitemColumnCount - 1)) / subitemColumnCount;
+              const subitemX = subitemGridX + start * (subitemColumnWidth + subitemGridGap);
+              const subitemWidth = Math.max(
+                24,
+                span * subitemColumnWidth + Math.max(0, span - 1) * subitemGridGap
+              );
+              const subitemRowY = subitemY + row * (subitemHeight + subitemRowGap);
+              const subitemText = wrapText(subitem.title, Math.max(1, Math.floor((subitemWidth - 18) / 8)), 2);
+              const subitemTextY = subitemRowY + subitemHeight / 2 - ((subitemText.length - 1) * 8.5) / 2;
+              return `
+        <rect x="${subitemX}" y="${subitemRowY}" width="${subitemWidth}" height="${subitemHeight}" rx="10" ry="10" fill="${mixWithWhite(subject.color, 0.78)}" />
+        ${subitemText
           .map(
             (line, lineIndex) => `
-          <text x="${x + w / 2}" y="${textY + lineIndex * 14}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" fill="rgba(48,37,20,0.88)">${escapeXml(
+          <text x="${subitemX + subitemWidth / 2}" y="${subitemTextY + lineIndex * 8.5}" text-anchor="middle" dominant-baseline="middle" font-size="10.5" font-weight="700" fill="#2b2b2b">${escapeXml(
               line
             )}</text>`
           )
           .join("")}
+      `;
+            })
+            .join("")
+        : "";
+      return `
+        <rect x="${x}" y="${yCard}" width="${w}" height="${h}" rx="18" ry="18" fill="${subject.color}" />
+        ${titleLines
+          .map(
+            (line, lineIndex) => `
+          <text x="${x + w / 2}" y="${titleY + lineIndex * titleLineHeight}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" fill="${cardTextColor}">${escapeXml(
+              line
+            )}</text>`
+          )
+          .join("")}
+        ${subitemMarkup}
       `;
     }).join("");
 
@@ -1364,6 +1412,44 @@ function getColumnReference(columnIndex) {
 
 function getSectionName(sectionId) {
   return state.sections.find((section) => section.id === sectionId)?.name.replace(/\n/g, " ") || "";
+}
+
+function layoutSubitemsForExport(subitems, columnCount) {
+  const placements = [];
+  const rows = [];
+
+  subitems.forEach((subitem) => {
+    const start = Math.max(0, Math.min(columnCount - 1, Number(subitem.start) || 0));
+    const span = Math.max(1, Math.min(columnCount - start, Number(subitem.span) || 1));
+    let rowIndex = 0;
+
+    while (true) {
+      if (!rows[rowIndex]) {
+        rows[rowIndex] = Array.from({ length: columnCount }, () => false);
+      }
+
+      const canPlace = rows[rowIndex].slice(start, start + span).every((cell) => !cell);
+      if (canPlace) {
+        for (let columnIndex = start; columnIndex < start + span; columnIndex += 1) {
+          rows[rowIndex][columnIndex] = true;
+        }
+        placements.push({
+          subitem,
+          start,
+          span,
+          row: rowIndex
+        });
+        break;
+      }
+
+      rowIndex += 1;
+    }
+  });
+
+  return {
+    placements,
+    rowCount: Math.max(1, rows.length)
+  };
 }
 
 function wrapText(value, charsPerLine, maxLines) {
