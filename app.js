@@ -580,7 +580,7 @@ function renderBoard() {
             subitemNode.style.gridColumn = `${subitem.start + 1} / span ${subitem.span}`;
             subitemNode.style.background = buildSubitemSurface(subject.color);
             subitemNode.style.borderColor = applyAlpha(subject.color, 0.92);
-            subitemNode.style.color = getReadableCardTextColor(subject.color);
+            subitemNode.style.color = "var(--ink)";
             subitemNode.innerHTML = `<span>${escapeHtml(subitem.title)}</span>`;
             subitemGrid.appendChild(subitemNode);
           });
