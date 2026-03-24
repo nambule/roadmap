@@ -2,8 +2,8 @@ const STORAGE_KEY = "roadmap-designer-state-v1";
 const PANEL_STORAGE_KEY = "roadmap-designer-panel-collapsed-v1";
 const COLUMNS_PER_VERSION = 3;
 const DEFAULT_START_YEAR = 2026;
-const BODY_FONT_STACK = '"Avenir Next", "Segoe UI", sans-serif';
-const DISPLAY_FONT_STACK = '"Gill Sans", "Avenir Next Condensed", sans-serif';
+const BODY_FONT_STACK = '"DM Sans", "Avenir Next", "Segoe UI", sans-serif';
+const DISPLAY_FONT_STACK = '"Syne", "Gill Sans", "Avenir Next Condensed", sans-serif';
 const DEFAULT_SECTION_PICTO = "▣";
 const SECTION_PICTO_OPTIONS = [
   { value: "▣", label: "▣" },
@@ -540,9 +540,15 @@ function renderBoard() {
   const header = document.createElement("div");
   header.className = "board-header";
   header.innerHTML = `
-    <div>
-      <p class="board-kicker"><span>${escapeHtml(state.company)}</span> // <strong>${escapeHtml(state.title)}</strong> // <span>PRODUCT ROADMAP</span></p>
+    <div class="board-identity">
+      <p class="board-eyebrow">Product Roadmap</p>
+      <div class="board-title">${escapeHtml(state.title)}</div>
+      ${state.company ? `<p class="board-company-tag">${escapeHtml(state.company)}</p>` : ""}
     </div>
+    ${state.versions.length ? `
+    <div class="board-years">
+      ${state.versions.map((v) => `<span class="board-year-chip">${escapeHtml(v.name)}</span>`).join("")}
+    </div>` : ""}
   `;
 
   const timeline = document.createElement("div");
@@ -566,7 +572,7 @@ function renderBoard() {
     sectionNode.className = "section";
     sectionNode.innerHTML = `
       <div class="section-grid" style="--roadmap-column-count:${totalColumns}; --lane-count:${laneCount};">
-        <div class="section-label">
+        <div class="section-label" style="--section-color: ${section.color}">
           <div class="section-icon-badge${getSectionBadgeClassName(section.icon)}" style="color:${section.color}; border: 4px solid ${applyAlpha(section.color, 0.55)};">${escapeHtml(section.icon || "✦")}</div>
           <h3 class="section-name">${escapeHtml(section.name)}</h3>
         </div>
@@ -843,10 +849,10 @@ function renderCreateIndicator(track, placement) {
     currentCreateIndicator = indicator;
   }
 
-  currentCreateIndicator.style.left = `${placement.col * versionWidth + 6}px`;
-  currentCreateIndicator.style.top = `${placement.row * rowHeight + 6}px`;
-  currentCreateIndicator.style.width = `${versionWidth - 12}px`;
-  currentCreateIndicator.style.height = `${rowHeight - 12}px`;
+  currentCreateIndicator.style.left = `${placement.col * versionWidth + 7}px`;
+  currentCreateIndicator.style.top = `${placement.row * rowHeight + 12 + 7}px`;
+  currentCreateIndicator.style.width = `${versionWidth - 14}px`;
+  currentCreateIndicator.style.height = `${rowHeight - 14}px`;
 }
 
 function clearDropPreview(track) {
