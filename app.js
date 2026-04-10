@@ -2,8 +2,24 @@ const STORAGE_KEY = "roadmap-designer-state-v1";
 const PANEL_STORAGE_KEY = "roadmap-designer-panel-collapsed-v1";
 const COLUMNS_PER_VERSION = 3;
 const DEFAULT_START_YEAR = 2026;
+const BOARD_COLUMN_WIDTH = 260;
+const EXPORT_COLUMN_WIDTH = 210;
 const BODY_FONT_STACK = '"DM Sans", "Avenir Next", "Segoe UI", sans-serif';
 const DISPLAY_FONT_STACK = '"Syne", "Gill Sans", "Avenir Next Condensed", sans-serif';
+const BASE_LANE_HEIGHT = 110;
+const SUBJECT_CARD_MARGIN_Y = 14;
+const SUBJECT_CARD_MIN_HEIGHT = 96;
+const SUBJECT_CARD_PADDING_Y = 26;
+const SUBJECT_CARD_TITLE_LINE_HEIGHT = 18;
+const SUBJECT_CARD_TITLE_MAX_LINES = 3;
+const SUBJECT_CARD_TITLE_CHAR_WIDTH = 8;
+const SUBJECT_CARD_INNER_WIDTH_OFFSET = 58;
+const SUBITEM_BOARD_MIN_HEIGHT = 38;
+const SUBITEM_BOARD_PADDING_Y = 14;
+const SUBITEM_BOARD_TEXT_LINE_HEIGHT = 14;
+const SUBITEM_BOARD_TEXT_CHAR_WIDTH = 7;
+const SUBITEM_BOARD_GRID_GAP = 6;
+const SUBITEM_BOARD_TITLE_GAP = 8;
 const DEFAULT_SECTION_PICTO = "▣";
 const SECTION_PICTO_OPTIONS = [
   { value: "▣", label: "▣" },
@@ -133,6 +149,7 @@ let editingSubjectId = null;
 let isCreatingSubject = false;
 let resizeSession = null;
 let modalSubitemsDraft = [];
+let pendingFocusedSubitemId = null;
 
 bindStaticEvents();
 render();
@@ -567,7 +584,12 @@ function renderBoard() {
   sections.className = "sections";
 
   state.sections.forEach((section) => {
-    const laneCount = getLaneCount(section.id);
+    const laneHeights = getSectionLaneHeights(section.id);
+    const laneCount = laneHeights.length;
+    const laneHeightTotal = laneHeights.reduce((sum, height) => sum + height, 0);
+    const trackStyle = laneCount
+      ? `grid-template-rows:${laneHeights.map((height) => `${height}px`).join(" ")}; min-height:${laneHeightTotal + 24}px;`
+      : "";
     const sectionNode = document.createElement("section");
     sectionNode.className = "section";
     sectionNode.innerHTML = `
@@ -576,7 +598,7 @@ function renderBoard() {
           <div class="section-icon-badge${getSectionBadgeClassName(section.icon)}" style="color:${section.color}; border: 4px solid ${applyAlpha(section.color, 0.55)};">${escapeHtml(section.icon || "✦")}</div>
           <h3 class="section-name">${escapeHtml(section.name)}</h3>
         </div>
-        <div class="section-track${laneCount === 0 ? " section-track-empty" : ""}" data-section-id="${section.id}"></div>
+        <div class="section-track${laneCount === 0 ? " section-track-empty" : ""}" data-section-id="${section.id}" data-row-heights="${laneHeights.join(",")}" style="${trackStyle}"></div>
       </div>
     `;
 
@@ -600,6 +622,7 @@ function renderBoard() {
         card.style.gridRow = `${subject.row + 1}`;
         card.style.color = getReadableCardTextColor(subject.color);
         const subitems = getChildSubjects(subject.id);
+        const boardSubitemLayout = subitems.length ? getBoardSubitemLayout(subject) : null;
         card.innerHTML = `
           <div class="subject-card-body">
             <div class="subject-card-title">${escapeHtml(subject.title)}</div>
@@ -613,15 +636,18 @@ function renderBoard() {
         `;
 
         const subitemGrid = card.querySelector(".subitem-board-grid");
-        if (subitemGrid) {
-          subitems.forEach((subitem) => {
+        if (subitemGrid && boardSubitemLayout) {
+          subitemGrid.style.gridTemplateRows = boardSubitemLayout.rowHeights.map((height) => `${height}px`).join(" ");
+          boardSubitemLayout.placements.forEach(({ subitem, start, span, row }) => {
             const subitemNode = document.createElement("div");
             subitemNode.className = "subitem-board-card";
-            subitemNode.style.gridColumn = `${subitem.start + 1} / span ${subitem.span}`;
-            subitemNode.style.gridRow = `${Math.max(0, subitem.row || 0) + 1}`;
+            subitemNode.dataset.subitemId = subitem.id;
+            subitemNode.style.gridColumn = `${start + 1} / span ${span}`;
+            subitemNode.style.gridRow = `${row + 1}`;
             subitemNode.style.background = buildSubitemSurface(subject.color);
             subitemNode.style.borderColor = applyAlpha(subject.color, 0.92);
             subitemNode.style.color = "var(--ink)";
+            subitemNode.title = subitem.title;
             subitemNode.innerHTML = `<span>${escapeHtml(subitem.title)}</span>`;
             subitemGrid.appendChild(subitemNode);
           });
@@ -632,6 +658,12 @@ function renderBoard() {
         card.addEventListener("dragstart", handleDragStart);
         card.addEventListener("dragend", handleDragEnd);
         card.addEventListener("click", (event) => {
+          const subitemNode = event.target.closest(".subitem-board-card");
+          if (subitemNode) {
+            event.stopPropagation();
+            openSubjectEditor(subject.id, { focusSubitemId: subitemNode.dataset.subitemId });
+            return;
+          }
           const action = event.target.dataset.action;
           if (!action) {
             return;
@@ -661,6 +693,173 @@ function getLaneCount(sectionId) {
     .filter((subject) => subject.sectionId === sectionId && !subject.parentId)
     .map((subject) => subject.row);
   return rows.length ? Math.max(...rows.map((row) => row + 1)) : 0;
+}
+
+function getBoardTitleLineCount(subject) {
+  const estimatedWidth = Math.max(48, subject.span * BOARD_COLUMN_WIDTH - SUBJECT_CARD_INNER_WIDTH_OFFSET);
+  const charsPerLine = Math.max(1, Math.floor(estimatedWidth / SUBJECT_CARD_TITLE_CHAR_WIDTH));
+  return Math.max(1, wrapText(subject.title, charsPerLine, SUBJECT_CARD_TITLE_MAX_LINES).length);
+}
+
+function measureSubitemLayout(subitems, options) {
+  if (!subitems.length) {
+    return null;
+  }
+
+  const {
+    columnCount,
+    gridWidth,
+    gridGap,
+    textCharWidth,
+    textLineHeight,
+    minHeight,
+    paddingX,
+    paddingY
+  } = options;
+  const layout = layoutSubitemsForExport(subitems, columnCount);
+  const safeColumnCount = Math.max(1, columnCount);
+  const columnWidth =
+    (Math.max(24, gridWidth) - gridGap * Math.max(0, safeColumnCount - 1)) / safeColumnCount;
+  const rowHeights = Array.from({ length: layout.rowCount }, () => minHeight);
+  const placements = layout.placements.map((placement) => {
+    const itemWidth = Math.max(24, placement.span * columnWidth + Math.max(0, placement.span - 1) * gridGap);
+    const charsPerLine = Math.max(1, Math.floor((itemWidth - paddingX * 2) / textCharWidth));
+    const lines = wrapText(placement.subitem.title, charsPerLine);
+    const textHeight = Math.max(textLineHeight, lines.length * textLineHeight);
+    const height = Math.max(minHeight, paddingY + textHeight);
+    rowHeights[placement.row] = Math.max(rowHeights[placement.row], height);
+    return {
+      ...placement,
+      width: itemWidth,
+      lines,
+      height
+    };
+  });
+
+  const rowOffsets = [];
+  let currentOffset = 0;
+  rowHeights.forEach((height, index) => {
+    rowOffsets[index] = currentOffset;
+    currentOffset += height + (index < rowHeights.length - 1 ? gridGap : 0);
+  });
+
+  return {
+    placements,
+    rowHeights,
+    rowOffsets,
+    rowCount: rowHeights.length,
+    totalHeight: currentOffset
+  };
+}
+
+function getBoardSubitemLayout(subject) {
+  const subitems = getChildSubjects(subject.id);
+  if (!subitems.length) {
+    return null;
+  }
+
+  const columnCount = Math.max(1, subject.span);
+  const gridWidth = Math.max(48, subject.span * BOARD_COLUMN_WIDTH - SUBJECT_CARD_INNER_WIDTH_OFFSET);
+  return measureSubitemLayout(subitems, {
+    columnCount,
+    gridWidth,
+    gridGap: SUBITEM_BOARD_GRID_GAP,
+    textCharWidth: SUBITEM_BOARD_TEXT_CHAR_WIDTH,
+    textLineHeight: SUBITEM_BOARD_TEXT_LINE_HEIGHT,
+    minHeight: SUBITEM_BOARD_MIN_HEIGHT,
+    paddingX: 10,
+    paddingY: SUBITEM_BOARD_PADDING_Y
+  });
+}
+
+function getBoardSubjectOuterHeight(subject) {
+  const titleHeight = getBoardTitleLineCount(subject) * SUBJECT_CARD_TITLE_LINE_HEIGHT;
+  const subitemLayout = getBoardSubitemLayout(subject);
+  const subitemHeight = subitemLayout
+    ? SUBITEM_BOARD_TITLE_GAP + subitemLayout.totalHeight
+    : 0;
+  const cardHeight = Math.max(SUBJECT_CARD_MIN_HEIGHT, SUBJECT_CARD_PADDING_Y + titleHeight + subitemHeight);
+  return Math.ceil(cardHeight + SUBJECT_CARD_MARGIN_Y);
+}
+
+function getSectionLaneHeights(sectionId) {
+  const laneCount = getLaneCount(sectionId);
+  if (!laneCount) {
+    return [];
+  }
+
+  const laneHeights = Array.from({ length: laneCount }, () => BASE_LANE_HEIGHT);
+  state.subjects
+    .filter((subject) => subject.sectionId === sectionId && !subject.parentId)
+    .forEach((subject) => {
+      laneHeights[subject.row] = Math.max(laneHeights[subject.row], getBoardSubjectOuterHeight(subject));
+    });
+
+  return laneHeights;
+}
+
+function getTrackRowHeights(track) {
+  const raw = track?.dataset.rowHeights || "";
+  const parsed = raw
+    .split(",")
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  if (parsed.length) {
+    return parsed;
+  }
+
+  const styles = getComputedStyle(document.documentElement);
+  const rowHeight = parseFloat(styles.getPropertyValue("--row-height"));
+  return [Number.isFinite(rowHeight) ? rowHeight : BASE_LANE_HEIGHT];
+}
+
+function getRowOffset(rowHeights, rowIndex) {
+  return rowHeights.slice(0, rowIndex).reduce((sum, height) => sum + height, 0);
+}
+
+function getExportSubjectMetrics(subject, colWidth) {
+  const cardMinHeight = 114;
+  const cardPaddingX = 14;
+  const titleLineHeight = 14;
+  const subitemGap = 12;
+  const subitemRowGap = 6;
+  const subitemTextLineHeight = 11;
+  const subitemMinHeight = 36;
+  const w = subject.span * colWidth - 12;
+  const subitems = getChildSubjects(subject.id);
+  const hasSubitems = subitems.length > 0;
+  const titleLines = wrapText(subject.title, Math.max(1, Math.floor((w - cardPaddingX * 2 - 6) / 8)), 3);
+  const titleBlockHeight = titleLines.length * titleLineHeight;
+  const subitemLayout = hasSubitems
+    ? measureSubitemLayout(subitems, {
+        columnCount: Math.max(1, subject.span),
+        gridWidth: Math.max(24, w - cardPaddingX * 2),
+        gridGap: subitemRowGap + 2,
+        textCharWidth: 6.2,
+        textLineHeight: subitemTextLineHeight,
+        minHeight: subitemMinHeight,
+        paddingX: 8,
+        paddingY: 14
+      })
+    : null;
+  const subitemAreaHeight = hasSubitems
+    ? subitemLayout.totalHeight
+    : 0;
+  const contentHeight = titleBlockHeight + (hasSubitems ? subitemGap : 0) + subitemAreaHeight;
+
+  return {
+    w,
+    titleLines,
+    titleLineHeight,
+    titleBlockHeight,
+    subitemGap: hasSubitems ? subitemGap : 0,
+    subitemRowGap,
+    subitemTextLineHeight,
+    subitemLayout,
+    cardPaddingX,
+    cardHeight: Math.max(cardMinHeight, contentHeight + 20)
+  };
 }
 
 function getChildSubjects(parentId) {
@@ -796,15 +995,24 @@ function getDropPlacement(track, event, span) {
   const rect = track.getBoundingClientRect();
   const styles = getComputedStyle(document.documentElement);
   const versionWidth = parseFloat(styles.getPropertyValue("--version-width"));
-  const rowHeight = parseFloat(styles.getPropertyValue("--row-height"));
-  const laneCount = getLaneCount(track.dataset.sectionId);
+  const rowHeights = getTrackRowHeights(track);
+  const laneCount = rowHeights.length;
   const maxCol = Math.max(0, getTotalColumns() - span);
 
   const offsetX = Math.max(0, Math.min(event.clientX - rect.left, rect.width - 1));
   const offsetY = Math.max(0, Math.min(event.clientY - rect.top, rect.height - 1));
 
   const rawCol = Math.floor(offsetX / versionWidth);
-  const rawRow = Math.floor(offsetY / rowHeight);
+  let rawRow = 0;
+  let rowTop = 0;
+  for (let index = 0; index < rowHeights.length; index += 1) {
+    rowTop += rowHeights[index];
+    if (offsetY < rowTop) {
+      rawRow = index;
+      break;
+    }
+    rawRow = index;
+  }
 
   return {
     col: Math.min(maxCol, Math.max(0, rawCol)),
@@ -816,7 +1024,9 @@ function renderDropPreview(track, placement, color) {
   clearDropPreview(track);
   const styles = getComputedStyle(document.documentElement);
   const versionWidth = parseFloat(styles.getPropertyValue("--version-width"));
-  const rowHeight = parseFloat(styles.getPropertyValue("--row-height"));
+  const rowHeights = getTrackRowHeights(track);
+  const rowHeight = rowHeights[placement.row] || BASE_LANE_HEIGHT;
+  const rowTop = getRowOffset(rowHeights, placement.row);
   const subjectId = draggedSubjectId;
   const subject = state.subjects.find((item) => item.id === subjectId);
   if (!subject) {
@@ -826,7 +1036,7 @@ function renderDropPreview(track, placement, color) {
   const preview = document.createElement("div");
   preview.className = "drop-indicator";
   preview.style.left = `${placement.col * versionWidth}px`;
-  preview.style.top = `${placement.row * rowHeight}px`;
+  preview.style.top = `${rowTop}px`;
   preview.style.width = `${subject.span * versionWidth - 12}px`;
   preview.style.height = `${rowHeight - 12}px`;
   preview.style.background = applyAlpha(color, 0.18);
@@ -838,7 +1048,9 @@ function renderDropPreview(track, placement, color) {
 function renderCreateIndicator(track, placement) {
   const styles = getComputedStyle(document.documentElement);
   const versionWidth = parseFloat(styles.getPropertyValue("--version-width"));
-  const rowHeight = parseFloat(styles.getPropertyValue("--row-height"));
+  const rowHeights = getTrackRowHeights(track);
+  const rowHeight = rowHeights[placement.row] || BASE_LANE_HEIGHT;
+  const rowTop = getRowOffset(rowHeights, placement.row);
 
   if (!currentCreateIndicator || currentCreateIndicator.parentElement !== track) {
     clearCreateIndicator();
@@ -850,7 +1062,7 @@ function renderCreateIndicator(track, placement) {
   }
 
   currentCreateIndicator.style.left = `${placement.col * versionWidth + 7}px`;
-  currentCreateIndicator.style.top = `${placement.row * rowHeight + 12 + 7}px`;
+  currentCreateIndicator.style.top = `${rowTop + 12 + 7}px`;
   currentCreateIndicator.style.width = `${versionWidth - 14}px`;
   currentCreateIndicator.style.height = `${rowHeight - 14}px`;
 }
@@ -949,7 +1161,7 @@ function handleResizeEnd() {
   }
 }
 
-function openSubjectEditor(subjectId) {
+function openSubjectEditor(subjectId, options = {}) {
   const subject = state.subjects.find((item) => item.id === subjectId);
   if (!subject) {
     return;
@@ -966,6 +1178,7 @@ function openSubjectEditor(subjectId) {
   modalSubjectRowInput.value = String(subject.row);
   modalSubjectColorInput.value = subject.color;
   modalSubitemsDraft = getChildSubjects(subject.id).map((subitem) => ({ ...structuredClone(subitem) }));
+  pendingFocusedSubitemId = options.focusSubitemId || null;
   subjectModalTitle.textContent = "Edit Roadmap Card";
   saveSubjectButton.textContent = "Save changes";
   deleteSubjectButton.hidden = false;
@@ -976,6 +1189,7 @@ function openSubjectEditor(subjectId) {
 function openNewSubjectEditor({ sectionId, start, row }) {
   editingSubjectId = null;
   isCreatingSubject = true;
+  pendingFocusedSubitemId = null;
   fillSectionOptions(modalSubjectSectionSelect);
   fillColumnOptions(modalSubjectStartSelect);
   modalSubjectTitleInput.value = "";
@@ -1003,6 +1217,7 @@ function closeSubjectModal() {
   editingSubjectId = null;
   isCreatingSubject = false;
   modalSubitemsDraft = [];
+  pendingFocusedSubitemId = null;
   subjectModal.classList.remove("is-open");
   subjectModal.setAttribute("aria-hidden", "true");
 }
@@ -1115,6 +1330,7 @@ function renderSubitemEditor() {
     const removeButton = node.querySelector(".subitem-remove");
 
     fillRelativeColumnOptions(startSelect, parentSpan);
+    node.dataset.subitemId = subitem.id;
     titleInput.value = subitem.title;
     rowInput.value = String(Math.max(1, Number(subitem.row) + 1 || 1));
     startSelect.value = String(Math.min(subitem.start || 0, parentSpan - 1));
@@ -1151,6 +1367,15 @@ function renderSubitemEditor() {
     });
 
     subitemList.appendChild(node);
+
+    if (pendingFocusedSubitemId && subitem.id === pendingFocusedSubitemId) {
+      requestAnimationFrame(() => {
+        titleInput.scrollIntoView({ block: "nearest", inline: "nearest" });
+        titleInput.focus();
+        titleInput.setSelectionRange(titleInput.value.length, titleInput.value.length);
+      });
+      pendingFocusedSubitemId = null;
+    }
   });
 }
 
@@ -1271,22 +1496,35 @@ function parseImportedRoadmap(content) {
 
 function buildRoadmapSvg() {
   const totalColumns = getTotalColumns();
-  const colWidth = 177;
+  const colWidth = EXPORT_COLUMN_WIDTH;
   const labelWidth = 190;
-  const rowHeight = 126;
   const sectionGap = 28;
   const headerHeight = 96;
   const sectionTopPadding = 18;
   const sectionBottomPadding = 20;
   const titleX = 40;
   const boardWidth = labelWidth + totalColumns * colWidth;
-  const sectionLayouts = state.sections.map((section) => ({
-    section,
-    lanes: getLaneCount(section.id),
-    subjects: state.subjects.filter((subject) => subject.sectionId === section.id && !subject.parentId)
-  }));
+  const sectionLayouts = state.sections.map((section) => {
+    const subjects = state.subjects.filter((subject) => subject.sectionId === section.id && !subject.parentId);
+    const subjectMetrics = new Map(subjects.map((subject) => [subject.id, getExportSubjectMetrics(subject, colWidth)]));
+    const laneCount = getLaneCount(section.id);
+    const laneHeights = Array.from({ length: laneCount }, () => 126);
+
+    subjects.forEach((subject) => {
+      const metrics = subjectMetrics.get(subject.id);
+      laneHeights[subject.row] = Math.max(laneHeights[subject.row], Math.ceil(metrics.cardHeight + 12));
+    });
+
+    return {
+      section,
+      laneHeights,
+      subjects,
+      subjectMetrics
+    };
+  });
   const sectionsHeight = sectionLayouts.reduce((sum, layout) => {
-    return sum + sectionTopPadding + layout.lanes * rowHeight + sectionBottomPadding + sectionGap;
+    const laneHeight = layout.laneHeights.reduce((laneSum, height) => laneSum + height, 0);
+    return sum + sectionTopPadding + laneHeight + sectionBottomPadding + sectionGap;
   }, 0);
   const width = titleX * 2 + boardWidth;
   const height = 56 + headerHeight + sectionsHeight;
@@ -1294,7 +1532,7 @@ function buildRoadmapSvg() {
 
   const sectionMarkup = sectionLayouts.map((layout, index) => {
     const y = currentY;
-    const laneHeight = layout.lanes * rowHeight;
+    const laneHeight = layout.laneHeights.reduce((sum, height) => sum + height, 0);
     currentY += sectionTopPadding + laneHeight + sectionBottomPadding + sectionGap;
     const dividerTop = index === 0 ? "" : `<line x1="${titleX}" y1="${y}" x2="${titleX + boardWidth}" y2="${y}" stroke="#3e3a37" stroke-width="4" />`;
     const labelY = y + 44;
@@ -1308,51 +1546,37 @@ function buildRoadmapSvg() {
       return `<rect x="${trackX + col * colWidth}" y="${trackY}" width="${colWidth}" height="${laneHeight}" fill="rgba(94,77,49,0.08)" />`;
     }).join("");
     const cards = layout.subjects.map((subject) => {
+      const metrics = layout.subjectMetrics.get(subject.id);
       const x = trackX + subject.start * colWidth + 6;
-      const yCard = trackY + subject.row * rowHeight + 6;
-      const w = subject.span * colWidth - 12;
-      const h = rowHeight - 12;
-      const subitems = getChildSubjects(subject.id);
-      const hasSubitems = subitems.length > 0;
+      const yCard = trackY + getRowOffset(layout.laneHeights, subject.row) + 6;
+      const w = metrics.w;
+      const h = metrics.cardHeight;
+      const hasSubitems = Boolean(metrics.subitemLayout);
       const cardTextColor = getReadableCardTextColor(subject.color);
-      const cardPaddingX = 14;
-      const titleLines = wrapText(subject.title, Math.max(1, Math.floor((w - cardPaddingX * 2 - 6) / 8)), 3);
-      const titleLineHeight = 14;
-      const titleBlockHeight = titleLines.length * titleLineHeight;
-      const subitemGap = hasSubitems ? 10 : 0;
-      const subitemHeight = hasSubitems ? 20 : 0;
-      const subitemRowGap = hasSubitems ? 8 : 0;
-      const subitemLayout = hasSubitems ? layoutSubitemsForExport(subitems, Math.max(1, subject.span)) : null;
-      const subitemAreaHeight = hasSubitems
-        ? subitemLayout.rowCount * subitemHeight + Math.max(0, subitemLayout.rowCount - 1) * subitemRowGap
-        : 0;
-      const contentHeight = titleBlockHeight + subitemGap + subitemAreaHeight;
+      const contentHeight = metrics.titleBlockHeight + metrics.subitemGap + (hasSubitems
+        ? metrics.subitemLayout.totalHeight
+        : 0);
       const contentTop = yCard + Math.max(10, (h - contentHeight) / 2);
-      const titleY = contentTop + titleLineHeight / 2;
-      const subitemY = contentTop + titleBlockHeight + subitemGap;
+      const titleY = contentTop + metrics.titleLineHeight / 2;
+      const subitemY = contentTop + metrics.titleBlockHeight + metrics.subitemGap;
       const subitemMarkup = hasSubitems
-        ? subitemLayout.placements
-            .map(({ subitem, start, span, row }) => {
+        ? metrics.subitemLayout.placements
+            .map(({ subitem, start, width: subitemWidth, row, lines, height: subitemHeight }) => {
               const subitemColumnCount = Math.max(1, subject.span);
               const subitemGridGap = 8;
-              const subitemGridX = x + cardPaddingX;
-              const subitemGridWidth = Math.max(24, w - cardPaddingX * 2);
+              const subitemGridX = x + metrics.cardPaddingX;
+              const subitemGridWidth = Math.max(24, w - metrics.cardPaddingX * 2);
               const subitemColumnWidth =
                 (subitemGridWidth - subitemGridGap * (subitemColumnCount - 1)) / subitemColumnCount;
               const subitemX = subitemGridX + start * (subitemColumnWidth + subitemGridGap);
-              const subitemWidth = Math.max(
-                24,
-                span * subitemColumnWidth + Math.max(0, span - 1) * subitemGridGap
-              );
-              const subitemRowY = subitemY + row * (subitemHeight + subitemRowGap);
-              const subitemText = wrapText(subitem.title, Math.max(1, Math.floor((subitemWidth - 18) / 8)), 2);
-              const subitemTextY = subitemRowY + subitemHeight / 2 - ((subitemText.length - 1) * 8.5) / 2;
+              const subitemRowY = subitemY + metrics.subitemLayout.rowOffsets[row];
+              const subitemTextY = subitemRowY + 9;
               return `
         <rect x="${subitemX}" y="${subitemRowY}" width="${subitemWidth}" height="${subitemHeight}" rx="10" ry="10" fill="${mixWithWhite(subject.color, 0.78)}" />
-        ${subitemText
+        ${lines
           .map(
             (line, lineIndex) => `
-          <text x="${subitemX + subitemWidth / 2}" y="${subitemTextY + lineIndex * 8.5}" text-anchor="middle" dominant-baseline="middle" font-size="10.5" font-weight="700" fill="#2b2b2b">${escapeXml(
+          <text x="${subitemX + 8}" y="${subitemTextY + lineIndex * metrics.subitemTextLineHeight}" text-anchor="start" dominant-baseline="hanging" font-size="9.5" font-weight="700" fill="#2b2b2b">${escapeXml(
               line
             )}</text>`
           )
@@ -1363,10 +1587,10 @@ function buildRoadmapSvg() {
         : "";
       return `
         <rect x="${x}" y="${yCard}" width="${w}" height="${h}" rx="18" ry="18" fill="${subject.color}" />
-        ${titleLines
+        ${metrics.titleLines
           .map(
             (line, lineIndex) => `
-          <text x="${x + w / 2}" y="${titleY + lineIndex * titleLineHeight}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" fill="${cardTextColor}">${escapeXml(
+          <text x="${x + w / 2}" y="${titleY + lineIndex * metrics.titleLineHeight}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" fill="${cardTextColor}">${escapeXml(
               line
             )}</text>`
           )
@@ -1519,18 +1743,33 @@ function wrapText(value, charsPerLine, maxLines) {
   const lines = [];
   let current = "";
   words.forEach((word) => {
-    const candidate = current ? `${current} ${word}` : word;
+    let remainder = word;
+
+    while (remainder.length > charsPerLine) {
+      if (current) {
+        lines.push(current);
+        current = "";
+      }
+      lines.push(remainder.slice(0, charsPerLine));
+      remainder = remainder.slice(charsPerLine);
+    }
+
+    const candidate = current ? `${current} ${remainder}` : remainder;
     if (candidate.length <= charsPerLine || !current) {
       current = candidate;
       return;
     }
+
     lines.push(current);
-    current = word;
+    current = remainder;
   });
   if (current) {
     lines.push(current);
   }
-  return lines.slice(0, maxLines);
+  if (typeof maxLines === "number" && maxLines > 0) {
+    return lines.slice(0, maxLines);
+  }
+  return lines;
 }
 
 function buildFilenameBase() {

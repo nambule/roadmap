@@ -26,7 +26,7 @@
 
   /* — Grid — */
   --grid-label-width: 200px;
-  --version-width:    220px;
+  --version-width:    260px;
   --row-height:       110px;
 }
 
@@ -41,7 +41,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 
 /* ── Layout ──────────────────────────────────────────────── */
 
@@ -175,7 +175,7 @@ h2 {
 }
 
 /* Inputs */
-input, select {
+input, select, textarea {
   width: 100%;
   border: 1px solid var(--panel-border);
   border-radius: 9px;
@@ -185,10 +185,14 @@ input, select {
   transition: border-color 130ms ease, background 130ms ease;
 }
 
-input:focus, select:focus {
+input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--panel-accent);
   background: rgba(255, 255, 255, 0.07);
+}
+
+textarea {
+  resize: vertical;
 }
 
 input[type="color"] {
@@ -325,6 +329,7 @@ input[type="color"] {
   line-height: 1.2;
   text-align: left;
   white-space: normal;
+  color: var(--panel-ink);
 }
 
 .section-editor-item .section-icon {
@@ -701,7 +706,7 @@ input[type="color"] {
 .subject-card-body {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 4px;
+  gap: 8px;
   min-height: 0;
 }
 
@@ -723,36 +728,40 @@ input[type="color"] {
 .subitem-board-grid {
   display: grid;
   grid-template-columns: repeat(var(--subitem-column-count), minmax(0, 1fr));
-  gap: 4px;
+  gap: 6px;
+  align-content: start;
   min-height: 0;
-  overflow: hidden;
 }
 
 .subitem-board-card {
   justify-self: stretch;
-  align-self: start;
+  align-self: stretch;
   width: 100%;
-  min-height: 0;
-  padding: 4px 8px;
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 5px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  min-height: 38px;
+  height: 100%;
+  padding: 7px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    0 1px 2px rgba(0, 0, 0, 0.05);
   font-family: 'DM Sans', sans-serif;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.25;
   text-align: left;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   background-clip: padding-box;
 }
 
 .subitem-board-card > span {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  text-wrap: balance;
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+  line-height: 1.25;
   width: 100%;
 }
 
@@ -924,9 +933,9 @@ input[type="color"] {
 .modal-card {
   position: relative;
   z-index: 1;
-  width: min(100%, 560px);
-  max-height: min(calc(100vh - 48px), 820px);
-  padding: 24px;
+  width: min(100%, 880px);
+  max-height: min(calc(100vh - 48px), 920px);
+  padding: 28px;
   border-radius: 20px;
   background: #1d1b18;
   border: 1px solid var(--panel-border);
@@ -938,14 +947,16 @@ input[type="color"] {
 }
 
 .modal-card input,
-.modal-card select {
+.modal-card select,
+.modal-card textarea {
   border-color: var(--panel-border);
   background: rgba(255, 255, 255, 0.05);
   color: var(--panel-ink);
 }
 
 .modal-card input:focus,
-.modal-card select:focus {
+.modal-card select:focus,
+.modal-card textarea:focus {
   border-color: var(--panel-accent);
   background: rgba(255, 255, 255, 0.08);
   outline: none;
@@ -1001,8 +1012,13 @@ input[type="color"] {
 
 .subitem-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) 88px 110px 110px;
+  grid-template-columns: minmax(280px, 2.4fr) 88px 110px 110px;
   gap: 8px;
+}
+
+.subitem-title {
+  min-height: 88px;
+  line-height: 1.45;
 }
 
 .modal-actions {
